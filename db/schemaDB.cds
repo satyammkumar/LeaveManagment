@@ -12,7 +12,7 @@ entity Employee : cuid, managed {
       email         : String(100);
       department    : String(50);
       managerId     : String(10);
-      password      : String(30);
+      password      : String(1000);
       leaveRequests : Association to many LeaveRequest
                         on leaveRequests.employee = $self;
       leaveBalances : Association to many LeaveBalance

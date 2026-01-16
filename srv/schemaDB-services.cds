@@ -23,7 +23,7 @@ service MyServices {
                             approverId: String,
                             comments: String)      returns LeaveRequests;
 
-  action login(email: String, employeeID: String) returns {
+  action login(email: String, password: String) returns {
     success: Boolean;
     message: String;
     employee: {

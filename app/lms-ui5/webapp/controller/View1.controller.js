@@ -105,7 +105,7 @@ sap.ui.define([
         const res = await fetch("/odata/v4/my-services/login", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email: email, employeeID: password })
+          body: JSON.stringify({ email: email, password})
         });
 
         if (!res.ok) {

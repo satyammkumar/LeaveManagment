@@ -1,6 +1,7 @@
 
 // srv/schemaDB-service.js
 const cds = require('@sap/cds');
+const bcrypt = require('bcryptjs');
 
 module.exports = cds.service.impl(async function () {
 
@@ -154,10 +155,9 @@ module.exports = cds.service.impl(async function () {
 
   // ==================== LOGIN ACTION (Leave Management) ====================
   this.on('login', async (req) => {
-    const { email, employeeID } = req.data;
-
+    const { email, password } = req.data;
     // 1) Validate input
-    if (!email || !employeeID) {
+    if (!email || !password) {
       return {
         success: false,
         message: 'Email and Employee ID are Found',
@@ -168,7 +168,6 @@ module.exports = cds.service.impl(async function () {
     try {
       // 2) Find employee by email via CAP entity (portable for HANA/SQLite)
       const emp = await SELECT.one.from(Employees).where({ email });
-
       // If not found, fail early
       if (!emp) {
         return {
@@ -178,25 +177,18 @@ module.exports = cds.service.impl(async function () {
         };
       }
 
-      // 3) Verify employeeID (entered password) against business ID in DB
-      if (String(emp.employeeId) !== String(employeeID)) {
+      const isPasswordValid = await bcrypt.compare(password, emp.password);
+      // 4) Optional: update a timestamp (managed aspect often handles modifiedAt automatically)
+
+      if (!isPasswordValid) {
         return {
           success: false,
-          message: 'Invalid email or employee ID',
+          message: 'Invalid email or password',
           employee: null
         };
       }
 
-      // 4) Optional: update a timestamp (managed aspect often handles modifiedAt automatically)
-      try {
-        await UPDATE(Employees).set({ modifiedAt: new Date() }).where({ ID: emp.ID });
-      } catch (e) {
-        // Ignore if field not present; managed aspect may auto-update
-      }
-
-      // 5) Prepare response to match CDS return type
-      // Note: 'designation' is NOT in your Employee model; provide a default or remove from CDS if not needed.
-      const designation = emp.designation || 'Employee'; // default for POC
+      const designation = emp.designation || 'Employee'; 
 
       return {
         success: true,
@@ -259,6 +251,12 @@ module.exports = cds.service.impl(async function () {
       }
       console.log('✅ Email is available');
 
+
+      console.log('🔐 Hashing password...');
+      const saltRounds = 10;
+      const hashedPassword = await bcrypt.hash(password, saltRounds);
+      console.log('✅ Password hashed successfully');
+
       // ---- Auto-generate Employee ID ----
       console.log('🔢 Generating next employee ID...');
 
@@ -286,7 +284,7 @@ module.exports = cds.service.impl(async function () {
           lastName,
           email,
           department: 'General',
-          password,
+          password: hashedPassword,
         })
       );
 

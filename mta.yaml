@@ -25,11 +25,6 @@ modules:
   - name: LM-Application-db
     properties:
       TARGET_CONTAINER: ~{hdi-container-name}
-  - name: cross-container-service-5
-    group: SERVICE_REPLACEMENTS
-    properties:
-      key: ServiceName_1
-      service: ~{the-service-name}
   parameters:
     buildpack: nodejs_buildpack
 - name: LM-Application
@@ -156,6 +151,12 @@ resources:
   type: org.cloudfoundry.existing-service
   parameters:
     service-name: ""
+  properties:
+    the-service-name: ${service-name}
+- name: cross-container-service-6
+  type: org.cloudfoundry.existing-service
+  parameters:
+    service-name: LM-Application-dev-00
   properties:
     the-service-name: ${service-name}
 parameters:

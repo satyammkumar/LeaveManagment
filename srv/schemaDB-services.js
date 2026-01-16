@@ -3,6 +3,7 @@
 const cds = require('@sap/cds');
 
 module.exports = cds.service.impl(async function () {
+
   const { Employees, LeaveRequests, LeaveBalances, LeaveTypes, Approvals } = this.entities;
 
   // ---------- Utilities ----------
@@ -221,27 +222,24 @@ module.exports = cds.service.impl(async function () {
   });
 
 
-       // ==================== REGISTRATION ACTION ====================
- 
+  // ==================== REGISTRATION ACTION ====================
+
   this.on('register', async (req) => {
     const { firstName, lastName, email, password } = req.data;
-
-    console.log('[register] Request received:', { firstName, lastName, email ,password});
-
     // ---- Basic Validation (server-side) ----
     if (!firstName || !lastName || !email || !password) {
-      console.log('[register] Missing required fields');
+      console.log('[register] ❌ Missing required fields');
       return req.reject(400, 'Missing required fields');
     }
 
     if (password.length < 6) {
-      console.log('[register] Password too short');
+      console.log('[register] ❌ Password too short');
       return req.reject(400, 'Password must be at least 6 characters');
     }
 
     const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailPattern.test(email)) {
-      console.log('[register] Invalid email format');
+      console.log('[register] ❌ Invalid email format');
       return req.reject(400, 'Invalid email address');
     }
 
@@ -249,38 +247,39 @@ module.exports = cds.service.impl(async function () {
 
     try {
       // ---- Check if email already exists ----
-      // FIX: Employees do not have 'username'; check by 'email'
-      // If you have UserAccounts with 'username', use:
-      // const existingUser = await tx.run(SELECT.one.from(UserAccounts).where({ username: email }));
+      console.log('🔍 Checking for existing employee with email:', email);
+
       const existingEmp = await tx.run(
         SELECT.one.from(Employees).where({ email })
       );
 
       if (existingEmp) {
-        console.log('[register] Email already registered:', email);
+        console.log('[register] ⚠️ Email already registered:', email);
         return req.reject(409, 'User with this email already exists');
       }
+      console.log('✅ Email is available');
 
       // ---- Auto-generate Employee ID ----
-      console.log('[register] Generating next employee ID...');
+      console.log('🔢 Generating next employee ID...');
+
       const lastEmployee = await tx.run(
         SELECT.one.from(Employees).orderBy({ employeeId: 'desc' })
       );
 
       let employeeId = 'E1001';
       if (lastEmployee && lastEmployee.employeeId) {
-        const currentId = lastEmployee.employeeId; // e.g., "E1003"
+        const currentId = lastEmployee.employeeId;
+        console.log('   - Last Employee ID found:', currentId);
         const numericPart = parseInt(currentId.replace(/[^0-9]/g, ''), 10);
         if (!isNaN(numericPart)) {
-          // Keep same padding length as currentId minus the leading 'E'
           employeeId = 'E' + String(numericPart + 1).padStart(currentId.length - 1, '0');
         }
+      } else {
+        console.log('   - No existing employees, starting with E1001');
       }
-      console.log('[register] Generated employee ID:', employeeId);
+      console.log('✅ Generated employee ID:', employeeId);
 
-      // ---- Create Employee ----
-      console.log('[register] Creating employee...');
-      await tx.run(
+      const insertResult = await tx.run(
         INSERT.into(Employees).entries({
           employeeId,
           firstName,
@@ -291,44 +290,29 @@ module.exports = cds.service.impl(async function () {
         })
       );
 
-      console.log('[register] Employee created');
+      console.log('✅ INSERT completed');
+      console.log('   - Insert Result:', insertResult);
 
       // Get the full employee record (to obtain technical ID for FKs)
+      console.log('🔍 Retrieving created employee from database...');
+
       const employee = await tx.run(
         SELECT.one.from(Employees).where({ email })
       );
 
-      console.log(employee,"empcheck")
-
       if (!employee) {
-        console.log('[register] Failed to retrieve created employee');
+        console.log('[register] ❌ Failed to retrieve created employee');
+        console.log('   - This might indicate the data was not saved!');
         return req.reject(500, 'Failed to create employee');
       }
 
-      // ---- Initialize LeaveBalances for all LeaveTypes ----
-      // try {
-      //   const leaveTypes = await tx.run(SELECT.from(LeaveTypes));
-      //   if (leaveTypes && leaveTypes.length > 0) {
-      //     console.log('[register] Initializing leave balances for', leaveTypes.length, 'types');
-
-      //     // Assumes cuid-based technical keys => FK columns employee_ID and leaveType_ID
-      //     const balanceEntries = leaveTypes.map(lt => ({
-      //       employee_ID: employee.ID,
-      //       leaveType_ID: lt.ID,
-      //       accruedDays: 0,
-      //       usedDays: 0,
-      //       balance: 0 
-      //     }));
-
-      //     await tx.run(INSERT.into(LeaveBalances).entries(balanceEntries));
-      //     console.log('[register] LeaveBalances initialized');
-      //   }
-      // } catch (e) {
-      //   console.warn('[register] Leave balance initialization failed:', e.message);
-      //   // Continue — leave balances are optional
-      // }
-
-      console.log('[register] Registration complete for:', email);
+      console.log('========================================');
+      console.log('✅ REGISTRATION SUCCESSFUL');
+      console.log('========================================');
+      console.log('   - Employee saved to:', cds.db.kind);
+      console.log('   - Employee ID:', employeeId);
+      console.log('   - Email:', email);
+      console.log('========================================');
 
       return {
         success: true,
@@ -343,7 +327,14 @@ module.exports = cds.service.impl(async function () {
       };
 
     } catch (e) {
+      console.error('========================================');
+      console.error('❌ REGISTRATION ERROR');
+      console.error('========================================');
       console.error('[register] Error:', e);
+      console.error('   - Error Message:', e.message);
+      console.error('   - Error Stack:', e.stack);
+      console.error('   - Database Kind:', cds.db.kind);
+      console.error('========================================');
       return req.reject(500, e.message || 'Registration failed');
     }
   });

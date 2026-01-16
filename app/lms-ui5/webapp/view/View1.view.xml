@@ -1,0 +1,37 @@
+
+<mvc:View
+  controllerName="lmsui5.controller.View1"
+  xmlns:mvc="sap.ui.core.mvc"
+  xmlns="sap.m"
+  xmlns:core="sap.ui.core">
+
+  <App id="app1">
+    <Page id="loginPage" showHeader="false" backgroundDesign="Solid">
+      <content>
+        <VBox width="100%" height="100%" alignItems="Center" justifyContent="Center" class="login__viewport">
+          <VBox class="login__card login__form" width="auto">
+            <Title text="Sign in" class="login__title"/>
+            <Text text="Use your Employee or Manager credentials" class="login__subtitle"/>
+
+            <Input id="username" placeholder="Username" valueLiveUpdate="true"/>
+            <Input id="password" type="Password" placeholder="Password" valueLiveUpdate="true"/>
+
+            <!-- Actions -->
+            <HBox class="login__actions sapUiSmallMarginTop" justifyContent="SpaceBetween" width="100%">
+              <Button id="btnRegister" text="Register" type="Transparent" press=".onOpenRegister"/>
+              <Button id="btnLogin" text="Login" type="Emphasized" press=".onLogin"/>
+            </HBox>
+
+            <MessageStrip id="msg" type="Error" showIcon="true" visible="false" class="sapUiTinyMarginTop"/>
+            <ObjectHeader
+              id="ohUser"
+              title="{user>/fullName}"
+              intro="{= ${user>/role} ? 'Signed in as ' + ${user>/role} : '' }"
+              visible="{= !!${user>/username} }"
+              class="sapUiTinyMarginTop"/>
+          </VBox>
+        </VBox>
+      </content>
+    </Page>
+  </App>
+</mvc:View>

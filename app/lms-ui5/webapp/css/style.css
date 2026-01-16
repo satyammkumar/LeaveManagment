@@ -1,0 +1,80 @@
+
+/* Full viewport background */
+.login__viewport {
+  min-height: 100vh;
+  background: #f4f6f8; /* Light gray background */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+}
+
+/* Floating card container */
+.login__card {
+  width: 420px;
+  max-width: 90vw;
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.12), 0 6px 12px rgba(0, 0, 0, 0.08);
+  padding: 1.5rem 1.5rem 2rem 1.5rem;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+/* Hover effect for floating feel */
+.login__card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.14), 0 8px 18px rgba(0, 0, 0, 0.10);
+}
+
+/* Title styling */
+.login__title {
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: #0a6ed1; /* SAP primary blue */
+  margin-bottom: 0.25rem;
+}
+
+/* Subtitle styling */
+.login__subtitle {
+  font-size: 0.95rem;
+  color: #6a6d70; /* SAP Quartz muted text */
+  margin-bottom: 1rem;
+}
+
+/* Inputs spacing */
+.login__form .sapMInputBase {
+  margin-top: 0.75rem;
+}
+
+/* Actions area */
+.login__actions {
+  margin-top: 1.25rem;
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* Button styling for floating effect */
+#btnLogin {
+  border-radius: 8px;
+  padding: 0.5rem 1.2rem;
+  box-shadow: 0 6px 12px rgba(10, 110, 209, 0.25);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+#btnLogin:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 18px rgba(10, 110, 209, 0.28);
+}
+
+#btnLogin:active {
+  transform: translateY(0);
+  box-shadow: 0 6px 12px rgba(10, 110, 209, 0.22);
+}
+
+
+.lightRedTextButton .sapMBtnInner {
+  color: #ffcccc !important; /* Light red for text and icon; adjust hex code as needed */
+}
+.lightRedTextButton:hover .sapMBtnInner {
+  color: #ffaaaa !important; /* Slightly darker on hover for better UX */
+}

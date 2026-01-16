@@ -1,0 +1,130 @@
+{
+  "_version": "1.76.0",
+  "sap.app": {
+    "id": "lmsui5",
+    "type": "application",
+    "i18n": "i18n/i18n.properties",
+    "applicationVersion": {
+      "version": "0.0.1"
+    },
+    "title": "{{appTitle}}",
+    "description": "{{appDescription}}",
+    "resources": "resources.json",
+    "sourceTemplate": {
+      "id": "@sap/generator-fiori:basic",
+      "version": "1.20.0",
+      "toolsId": "4ff312fc-432e-4416-887d-b7ebf9ec7882"
+    },
+    "dataSources": {
+      "mainService": {
+        "uri": "/odata/v4/my-services/",
+        "type": "OData",
+        "settings": {
+          "annotations": [],
+          "odataVersion": "4.0"
+        }
+      }
+    }
+  },
+  "sap.ui": {
+    "technology": "UI5",
+    "icons": {
+      "icon": "",
+      "favIcon": "",
+      "phone": "",
+      "phone@2": "",
+      "tablet": "",
+      "tablet@2": ""
+    },
+    "deviceTypes": {
+      "desktop": true,
+      "tablet": true,
+      "phone": true
+    }
+  },
+  "sap.ui5": {
+    "flexEnabled": false,
+    "dependencies": {
+      "minUI5Version": "1.143.2",
+      "libs": {
+        "sap.m": {},
+        "sap.ui.core": {},
+        "sap.ui.layout": {}, 
+        "sap.ui.unified": {}           
+      }
+    },
+    "contentDensities": {
+      "compact": true,
+      "cozy": true
+    },
+    "models": {
+      "i18n": {
+        "type": "sap.ui.model.resource.ResourceModel",
+        "settings": {
+          "bundleName": "lmsui5.i18n.i18n"
+        }
+      },
+      "": {
+        "type": "sap.ui.model.odata.v4.ODataModel",
+        "dataSource": "mainService",
+        "preload": true,
+        "settings": {
+          "synchronizationMode": "None",
+          "operationMode": "Server",
+          "autoExpandSelect": true,
+          "earlyRequests": true
+        }
+      },
+      "user": {
+        "type": "sap.ui.model.json.JSONModel",
+        "settings": {}
+      },
+      "auth": {
+        "type": "sap.ui.model.json.JSONModel",
+        "settings": {
+          "isAuthenticated": false,
+          "user": {},
+          "error": ""
+        }
+      }
+    },
+    "resources": {
+      "css": [
+        {
+          "uri": "css/style.css"
+        }
+      ]
+    },
+    "routing": {
+      "config": {
+        "routerClass": "sap.m.routing.Router",
+        "controlAggregation": "pages",
+        "controlId": "app",
+        "transition": "slide",
+        "type": "View",
+        "viewType": "XML",
+        "path": "lmsui5.view",
+        "async": true,
+        "viewPath": "lmsui5.view"
+      },
+      "routes": [
+        { "name": "Login",    "pattern": "",                    "target": ["Login"] },
+        { "name": "Employee", "pattern": "employee/{username}", "target": ["Employee"] },
+        { "name": "Manager",  "pattern": "manager",             "target": ["Manager"] },
+        { "name": "Register", "pattern": "register",            "target": ["Register"] }
+      ],
+      "targets": {
+        "Login":    { "id": "Login",    "name": "View1",    "viewLevel": 1 },
+        "Employee": { "id": "Employee", "name": "Employee", "viewLevel": 2 },
+        "Manager":  { "id": "Manager",  "name": "Manager",  "viewLevel": 2 },
+        "Register": { "id": "Register", "name": "Register", "viewLevel": 1 }
+      }
+    },
+    "rootView": {
+      "viewName": "lmsui5.view.App",
+      "type": "XML",
+      "id": "App",
+      "async": true
+    }
+  }
+}

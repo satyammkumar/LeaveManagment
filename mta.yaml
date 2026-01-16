@@ -1,0 +1,169 @@
+_schema-version: 3.3.0
+ID: LM-Application
+description: A simple CAP project.
+version: 1.0.0
+modules:
+- name: LM-Application-srv
+  type: nodejs
+  path: gen/srv
+  requires:
+  - name: LM-Application-auth
+  - name: LM-Application-db
+  provides:
+  - name: srv-api
+    properties:
+      srv-url: ${default-url}
+  parameters:
+    buildpack: nodejs_buildpack
+    instances: 1
+  build-parameters:
+    builder: npm-ci
+- name: LM-Application-db-deployer
+  type: hdb
+  path: gen/db
+  requires:
+  - name: LM-Application-db
+    properties:
+      TARGET_CONTAINER: ~{hdi-container-name}
+  - name: cross-container-service-5
+    group: SERVICE_REPLACEMENTS
+    properties:
+      key: ServiceName_1
+      service: ~{the-service-name}
+  parameters:
+    buildpack: nodejs_buildpack
+- name: LM-Application
+  type: approuter.nodejs
+  path: app/router
+  requires:
+  - name: srv-api
+    group: destinations
+    properties:
+      forwardAuthToken: true
+      name: srv-api
+      url: ~{srv-url}
+  - name: LM-Application-auth
+  - name: LM-Application-destination-service
+    group: destinations
+    properties:
+      forwardAuthToken: false
+      name: ui5
+      url: https://ui5.sap.com
+  provides:
+  - name: app-api
+    properties:
+      app-protocol: ${protocol}
+      app-uri: ${default-uri}
+  parameters:
+    disk-quota: 256M
+    keep-existing-routes: true
+    memory: 256M
+- name: LM-Application-app-content
+  type: com.sap.application.content
+  path: .
+  requires:
+  - name: LM-Application-repo-host
+    parameters:
+      content-target: true
+  build-parameters:
+    build-result: resources
+    requires:
+    - artifacts:
+      - lmsui5.zip
+      name: lmsui5
+      target-path: resources/
+- name: lmsui5
+  type: html5
+  path: app/lms-ui5
+  build-parameters:
+    build-result: dist
+    builder: custom
+    commands:
+    - npm install
+    - npm run build:cf
+    supported-platforms: []
+resources:
+- name: LM-Application-auth
+  type: org.cloudfoundry.managed-service
+  parameters:
+    config:
+      oauth2-configuration:
+        redirect-uris:
+        - https://*~{app-api/app-uri}/**
+      tenant-mode: dedicated
+      xsappname: LM-Application-${org}-${space}
+    path: ./xs-security.json
+    service: xsuaa
+    service-plan: application
+  requires:
+  - name: app-api
+- name: LM-Application-db
+  type: com.sap.xs.hdi-container
+  parameters:
+    service: hana
+    service-plan: hdi-shared
+  properties:
+    hdi-container-name: ${service-name}
+- name: LM-Application-repo-host
+  type: org.cloudfoundry.managed-service
+  parameters:
+    service: html5-apps-repo
+    service-name: LM-Application-html5-service
+    service-plan: app-host
+- name: LM-Application-destination-service
+  type: org.cloudfoundry.managed-service
+  parameters:
+    config:
+      HTML5Runtime_enabled: false
+      init_data:
+        instance:
+          destinations:
+          - Authentication: NoAuthentication
+            Name: ui5
+            ProxyType: Internet
+            Type: HTTP
+            URL: https://ui5.sap.com
+          existing_destinations_policy: update
+      version: 1.0.0
+    service: destination
+    service-name: LM-Application-destination-service
+    service-plan: lite
+- name: cross-container-service-1
+  type: org.cloudfoundry.existing-service
+  parameters:
+    service-name: LM-Application-dev-00
+  properties:
+    the-service-name: ${service-name}
+- name: cross-container-service-2
+  type: org.cloudfoundry.existing-service
+  parameters:
+    service-name: LM-Application-dev-00
+  properties:
+    the-service-name: ${service-name}
+- name: cross-container-service-3
+  type: org.cloudfoundry.existing-service
+  parameters:
+    service-name: ""
+  properties:
+    the-service-name: ${service-name}
+- name: cross-container-service-4
+  type: org.cloudfoundry.existing-service
+  parameters:
+    service-name: ""
+  properties:
+    the-service-name: ${service-name}
+- name: cross-container-service-5
+  type: org.cloudfoundry.existing-service
+  parameters:
+    service-name: ""
+  properties:
+    the-service-name: ${service-name}
+parameters:
+  deploy_mode: html5-repo
+  enable-parallel-deployments: true
+build-parameters:
+  before-all:
+  - builder: custom
+    commands:
+    - npm ci
+    - npx cds build --production

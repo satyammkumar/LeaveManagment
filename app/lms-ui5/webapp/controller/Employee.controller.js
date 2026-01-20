@@ -47,7 +47,7 @@ sap.ui.define([
       try {
         console.log("Calling API with username:", sUsername);
 
-        // POST to CAP action (kept as you wrote: /odata/v4/my-services/getEmployeeData)
+        // POST to CAP action 
         const res = await fetch("/odata/v4/my-services/getEmployeeData", {
           method: "POST",
           headers: { "Content-Type": "application/json" },

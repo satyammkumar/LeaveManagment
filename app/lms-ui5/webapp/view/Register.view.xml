@@ -25,6 +25,10 @@
             <Input id="firstName" placeholder="First Name" value="{register>/firstName}" valueLiveUpdate="true"/>
             <Input id="lastName" placeholder="Last Name" value="{register>/lastName}" valueLiveUpdate="true"/>
             <Input id="email" placeholder="Email Address" type="Email" value="{register>/email}" valueLiveUpdate="true"/>
+
+            <!-- NEW: Manager ID -->
+            <Input id="managerId" placeholder="Manager ID" value="{register>/managerId}" valueLiveUpdate="true"/>
+
             <Input id="pass" placeholder="Password (min 6 characters)" type="Password" value="{register>/password}" valueLiveUpdate="true"/>
             <Input id="confirmPassword" placeholder="Confirm Password" type="Password" value="{register>/confirmPassword}" valueLiveUpdate="true"/>
 

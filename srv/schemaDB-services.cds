@@ -8,7 +8,6 @@ service MyServices {
   entity LeaveBalances as projection on lm.LeaveBalance;
   entity Approvals     as projection on lm.Approval;
 
-  // Custom actions for business logic
   action submitLeaveRequest(employeeId: String,
                             leaveTypeCode: String,
                             startDate: Date,
@@ -42,6 +41,7 @@ service MyServices {
     lastName   : String(50),
     email      : String(100),
     password   : String(100),
+    managerId  :String(10)
   ) returns {
     success    : Boolean;
     message    : String;

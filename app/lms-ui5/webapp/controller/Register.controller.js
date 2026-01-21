@@ -1,7 +1,3 @@
-// ============================================
-// FILE: webapp/controller/Register.controller.js
-// ============================================
-
 sap.ui.define(
   [
     "sap/ui/core/mvc/Controller",

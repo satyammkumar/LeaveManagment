@@ -13,7 +13,7 @@
             <Title text="Sign in" class="login__title"/>
             <Text text="Use your Employee or Manager credentials" class="login__subtitle"/>
 
-            <Input id="username" placeholder="Username" valueLiveUpdate="true"/>
+            <Input id="username" placeholder="Email" valueLiveUpdate="true"/>
             <Input id="password" type="Password" placeholder="Password" valueLiveUpdate="true"/>
 
             <!-- Actions -->
@@ -23,6 +23,8 @@
             </HBox>
 
             <MessageStrip id="msg" type="Error" showIcon="true" visible="false" class="sapUiTinyMarginTop"/>
+
+            <!-- Optional summary if already bound to user model -->
             <ObjectHeader
               id="ohUser"
               title="{user>/fullName}"

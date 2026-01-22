@@ -1,0 +1,178 @@
+
+<mvc:View
+  controllerName="lmsui5.controller.Manager"
+  xmlns:mvc="sap.ui.core.mvc"
+  xmlns="sap.m"
+  xmlns:core="sap.ui.core">
+
+  <Page id="managerPage" title="Leave Approvals">
+    <headerContent>
+      <ObjectStatus text="{= 'Role: ' + (${user>/role} || 'Manager')}" state="Information"/>
+    </headerContent>
+
+    <content>
+      <VBox class="sapUiMediumMargin">
+
+        <!-- ======== Greeting & Main Actions ======== -->
+        <HBox width="100%" justifyContent="SpaceBetween" alignItems="Center">
+          <Title text="Manager, {user>/fullName}" level="H2"/>
+          <HBox width="100%" justifyContent="End" alignItems="Center">
+            <Button text="Logout" icon="sap-icon://log" press=".onLogout" class="lightRedButton"/>
+          </HBox>
+        </HBox>
+
+        <!-- ======== KPI Chip Row ======== -->
+        <HBox width="100%" class="sapUiSmallMarginTop" wrap="Wrap" renderType="Bare">
+          <ObjectStatus id="kpiPending"  title="Pending"  text="{view>/kpi/pending}"  state="Warning"  class="sapUiSmallMarginEnd"/>
+          <ObjectStatus id="kpiApproved" title="Approved Today" text="{view>/kpi/approvedToday}" state="Success" class="sapUiSmallMarginEnd"/>
+          <ObjectStatus id="kpiRejected" title="Rejected Today" text="{view>/kpi/rejectedToday}" state="Error"/>
+        </HBox>
+
+        <!-- ======== Filter Bar ======== -->
+        <Toolbar class="sapUiMediumMarginTop">
+          <!-- Status (default Pending) -->
+          <Select id="selStatus" width="10rem" change=".onStatusChange">
+            <items>
+              <core:Item key="Pending"  text="Pending"/>
+              <core:Item key="Approved" text="Approved"/>
+              <core:Item key="Rejected" text="Rejected"/>
+              <core:Item key="Cancelled" text="Cancelled"/>
+              <core:Item key="All"      text="All"/>
+            </items>
+          </Select>
+
+          <!-- SubmittedAt date range filter -->
+          <DateRangeSelection id="drSubmitted"
+                              displayFormat="medium"
+                              delimiter="→"
+                              change=".onDateRangeChange"
+                              width="16rem"
+                              class="sapUiTinyMarginBegin"/>
+
+          <!-- Search across employee/leave/Reason -->
+          <SearchField id="reqSearch"
+                       placeholder="Search: employee, leave type, or reason"
+                       width="22rem"
+                       liveChange=".onLiveSearch"
+                       search=".onSearch"
+                       class="sapUiTinyMarginBegin"/>
+
+          <ToolbarSpacer/>
+          <Button text="Clear" icon="sap-icon://reset" press=".onClearFilters"/>
+          <Button text="Refresh" icon="sap-icon://refresh" type="Emphasized" press=".onRefresh"/>
+        </Toolbar>
+
+        <!-- ======== Actions above table (bulk) ======== -->
+        <Toolbar>
+          <Title text="Requests from Your Team"/>
+          <ToolbarSpacer/>
+          <Button id="btnApproveSel" text="Approve Selected" type="Accept" icon="sap-icon://accept" enabled="false" press=".onApproveSelected"/>
+          <Button id="btnRejectSel"  text="Reject Selected"  type="Reject" icon="sap-icon://decline" enabled="false" press=".onRejectSelected" class="sapUiTinyMarginBegin"/>
+        </Toolbar>
+
+        <!-- ======== Worklist Table ======== -->
+        <Table id="tblRequests"
+               mode="MultiSelect"
+               growing="true"
+               growingScrollToLoad="true"
+               items="{
+                 path: '/LeaveRequests',
+                 parameters: {
+                   $count: true,
+                   $expand: 'employee,leaveType'
+                 }
+               }"
+               updateFinished=".onUpdateFinished"
+               itemPress=".onItemPress"
+               class="sapUiMediumMarginTop">
+
+          <headerToolbar>
+            <Toolbar>
+              <Title text="Leave Requests"/>
+              <ToolbarSpacer/>
+              <Text id="txtCount" text="({= ${/LeaveRequests/$count} || '' })"/>
+            </Toolbar>
+          </headerToolbar>
+
+          <columns>
+            <Column width="16rem"><Text text="Employee"/></Column>
+            <Column width="12rem"><Text text="Leave Type"/></Column>
+            <Column width="16rem"><Text text="Period"/></Column>
+            <Column width="8rem"  hAlign="End"><Text text="Days"/></Column>
+            <Column width="18rem"><Text text="Reason"/></Column>
+            <Column width="12rem"><Text text="Status"/></Column>
+            <Column width="16rem" hAlign="End"><Text text="Actions"/></Column>
+          </columns>
+
+          <items>
+            <ColumnListItem type="Active" press=".onRowPress">
+              <cells>
+                <!-- Employee -->
+                <ObjectIdentifier title="{employee/firstName} {employee/lastName}"
+                                  text="{employee/employeeId}"/>
+
+                <!-- Leave Type -->
+                <ObjectIdentifier title="{leaveType/code}"
+                                  text="{leaveType/description}"/>
+
+                <!-- Period -->
+                <Text text="{ parts: [{path:'startDate'},{path:'endDate'}], formatter: '.formatDateRange' }"/>
+
+                <!-- Days -->
+                <Text text="{path: 'daysRequested'}"/>
+
+                <!-- Reason -->
+                <Text text="{reason}" wrapping="true" maxLines="2"/>
+
+                <!-- Status -->
+                <ObjectStatus text="{status}" state="{ path: 'status', formatter: '.formatStatusState' }"/>
+
+                <!-- Row actions -->
+                <HBox justifyContent="End" width="100%">
+                  <Button text="Approve" type="Accept" icon="sap-icon://accept"
+                          press=".onApproveOne"
+                          visible="{= ${status} === 'Pending' }"/>
+                  <Button text="Reject" type="Reject" icon="sap-icon://decline"
+                          press=".onRejectOne"
+                          class="sapUiTinyMarginBegin"
+                          visible="{= ${status} === 'Pending' }"/>
+                </HBox>
+              </cells>
+            </ColumnListItem>
+          </items>
+        </Table>
+
+        <!-- ======== Empty State ======== -->
+        <MessageStrip
+          id="msEmpty"
+          text="No matching requests. Adjust filters or refresh."
+          type="Information"
+          showIcon="true"
+          visible="false"
+          class="sapUiSmallMarginTop"/>
+
+        <!-- ======== Details Popover ======== -->
+        <ResponsivePopover id="popDetails" placement="Auto" title="Leave Request">
+          <VBox class="sapUiSmallMargin">
+            <ObjectAttribute title="Employee" text="{employee/firstName} {employee/lastName} ({employee/employeeId})"/>
+            <ObjectAttribute title="Email" text="{employee/email}"/>
+            <ObjectAttribute title="Leave Type" text="{leaveType/code} - {leaveType/description}"/>
+            <ObjectAttribute title="Period" text="{ parts: [{path:'startDate'},{path:'endDate'}], formatter: '.formatDateRange' }"/>
+            <ObjectAttribute title="Days" text="{daysRequested}"/>
+            <ObjectAttribute title="Submitted" text="{ path: 'submittedAt', formatter: '.formatDateTime' }"/>
+            <ObjectAttribute title="Reason" text="{reason}"/>
+            <ObjectStatus title="Status" text="{status}" state="{ path: 'status', formatter: '.formatStatusState' }"/>
+            <HBox class="sapUiSmallMarginTop" justifyContent="End">
+              <Button text="Approve" type="Accept" icon="sap-icon://accept" press=".onApproveFromPopover"
+                      visible="{= ${status} === 'Pending' }"/>
+              <Button text="Reject"  type="Reject" icon="sap-icon://decline" press=".onRejectFromPopover"
+                      class="sapUiTinyMarginBegin"
+                      visible="{= ${status} === 'Pending' }"/>
+            </HBox>
+          </VBox>
+        </ResponsivePopover>
+
+      </VBox>
+    </content>
+  </Page>
+</mvc:View>

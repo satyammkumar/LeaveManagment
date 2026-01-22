@@ -1,3 +1,4 @@
+
 sap.ui.define([
   "sap/ui/core/mvc/Controller",
   "sap/m/MessageBox",
@@ -11,11 +12,9 @@ sap.ui.define([
       this.getOwnerComponent().getRouter().navTo("Register");
     },
 
-    // ✅ ADDITIONS: Enter behavior + reset on return to Login
     onInit: function () {
       const oUsername = this.byId("username");
       const oPassword = this.byId("password");
-      const oLoginBtn = this.byId("btnLogin");
 
       // Enter in Username → focus Password
       if (oUsername) {
@@ -26,25 +25,20 @@ sap.ui.define([
         });
       }
 
-      // Enter in Password → trigger existing onLogin
+      // Enter in Password → trigger onLogin
       if (oPassword) {
         oPassword.addEventDelegate({
           onsapenter: function () {
-            this.onLogin();  // uses your existing onLogin logic
+            this.onLogin();
           }.bind(this)
         });
       }
 
-      // Optional: Space/Enter on Login button → press -> onLogin
-      if (oLoginBtn) {
-        oLoginBtn.attachPress(this.onLogin, this);
-      }
-
-      // 🔹 Reset the form whenever router targets the Login route
+      // Reset the form whenever router targets the Login route
       const oRouter = this.getOwnerComponent().getRouter();
       oRouter.getRoute("Login").attachPatternMatched(this._onLoginRouteMatched, this);
 
-      // 🔹 Also reset whenever the login page is about to be shown
+      // Also reset whenever the login page is about to be shown
       this.getView().addEventDelegate({
         onBeforeShow: function () {
           this._resetLoginForm();
@@ -52,7 +46,6 @@ sap.ui.define([
       });
     },
 
-    // 🔧 Helper to clear inputs and hide error strip
     _resetLoginForm: function () {
       const oUsername = this.byId("username");
       const oPassword = this.byId("password");
@@ -61,12 +54,8 @@ sap.ui.define([
       if (oUsername) oUsername.setValue("");
       if (oPassword) oPassword.setValue("");
       if (oMsgStrip) oMsgStrip.setVisible(false);
-
-      // Optional: if you want to always start empty, also clear remembered email:
-      // try { localStorage.removeItem("login_email"); } catch (e) {}
     },
 
-    // 🔁 Called whenever the Login route is matched (e.g., after logout or returning from Register)
     _onLoginRouteMatched: function () {
       this._resetLoginForm();
 
@@ -80,16 +69,16 @@ sap.ui.define([
     },
 
     onLogin: async function () {
-      const email = this.byId("username").getValue().trim();   // XML id = username
-      const password = this.byId("password").getValue().trim(); // XML id = password
+      const email = (this.byId("username").getValue() || "").trim();
+      const password = (this.byId("password").getValue() || "").trim();
 
       // Basic validation
       if (!email || !password) {
-        this._showError("Please enter email and employee ID.");
+        this._showError("Please enter email and password.");
         return;
       }
 
-      // Optional: simple email pattern check
+      // Simple email pattern check
       const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailPattern.test(email)) {
         this._showError("Please enter a valid email address.");
@@ -101,37 +90,29 @@ sap.ui.define([
       if (msgStrip) msgStrip.setVisible(false);
 
       try {
-        // Call CAP login (unbound action) — KEEPING YOUR ORIGINAL PATH & HEADERS
+        // Call CAP login (unbound action) — keep your endpoint
         const res = await fetch("/odata/v4/my-services/login", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email: email, password})
+          body: JSON.stringify({ email, password })
         });
 
         if (!res.ok) {
-          // IMPORTANT: clone before attempting different readers to avoid
-          // "Failed to execute 'text' on 'Response': body stream already read"
           const resClone = res.clone();
           let errTxt = "Invalid credentials";
           try {
-            // Try to read JSON from the original response ONCE
             const ejson = await res.json();
             errTxt = ejson?.error?.message || ejson?.message || errTxt;
           } catch (e) {
-            // Fallback: read text from the CLONE (not the original)
-            try {
-              errTxt = (await resClone.text()) || errTxt;
-            } catch (ee) {
-              // keep default errTxt
-            }
+            try { errTxt = (await resClone.text()) || errTxt; } catch (ee) {}
           }
           throw new Error(errTxt);
         }
 
         // SUCCESS: read body exactly once
         const user = await res.json();
-        const emp = user.employee;
-        console.log(user, "user");
+        const emp = user?.employee;
+        const router = this.getOwnerComponent().getRouter();
 
         // Persist to auth model (defined in manifest.json)
         const authModel = this.getOwnerComponent().getModel("auth");
@@ -140,21 +121,31 @@ sap.ui.define([
         }
 
         // optional: remember email locally
-        try { localStorage.setItem("login_email", email); } catch (e) { /* ignore */ }
+        try { localStorage.setItem("login_email", email); } catch (e) {}
 
-        if (emp) {
-          MessageToast.show(`Welcome, ${emp?.firstName || emp?.email}`);
+        if (!emp) {
+          MessageToast.show("Invalid user");
+          return;
+        }
+
+        MessageToast.show(`Welcome, ${emp?.firstName || emp?.email}`);
+
+       
+        const isAdminEmail = (emp?.email || "").toLowerCase() === "admin@gmail.com";
+        const backendRole = (user?.role || user?.employee?.role || "").toLowerCase();
+        const isManagerRole = backendRole === "manager";
+
+        if (isAdminEmail || isManagerRole) {
+          router.navTo("Manager");
         } else {
-          MessageToast.show(`Invalid user`);
+          const usernameParam = emp?.email;
+          if (usernameParam) {
+            router.navTo("Employee", { username: usernameParam });
+          } else {
+            router.navTo("Employee");
+          }
         }
 
-        // Navigate to Employee view, pass username if your route expects it
-        // Ensure manifest routing has: pattern "employee/{username}"
-        const usernameParam = emp?.email;
-        console.log(usernameParam, "test");
-        if (usernameParam) {
-          this.getOwnerComponent().getRouter().navTo("Employee", { username: usernameParam });
-        }
       } catch (err) {
         this._showError(err.message || "Login failed");
       }
@@ -195,25 +186,19 @@ sap.ui.define([
     },
 
     onOpenRegister: function () {
-      // Navigate to Register view instead of opening inline dialog
       this.getOwnerComponent().getRouter().navTo("Register");
     },
 
     onCancelRegister: function () {
-      // This is no longer needed for inline dialog, but kept for reference
-      // The Register controller will handle navigation back to Login
       const oDialog = this.byId("registerDialog");
       oDialog && oDialog.close();
     },
 
     onSubmitRegister: async function () {
-      // This is no longer needed since registration is handled in Register controller
-      // But keeping the logic as fallback
       const m = this.getOwnerComponent().getModel("auth");
       const data = m.getProperty("/register") || {};
-      const { firstName, lastName, email, password, confirm, role } = data;
+      const { firstName, lastName, email, password, confirm /*, role*/ } = data;
 
-      // Basic validation
       if (!firstName || !lastName || !email || !password || !confirm) {
         MessageBox.warning("Please fill in all required fields.");
         return;
@@ -229,12 +214,6 @@ sap.ui.define([
       }
 
       try {
-        // TODO: Replace with your CAP/OData endpoint
-        // Example: OData V4
-        // const oModel = this.getOwnerComponent().getModel();
-        // const list = oModel.bindList("/Users");
-        // await list.create({ firstName, lastName, email, role, password }).created();
-
         MessageToast.show("Registration successful! Please log in.");
         this.onCancelRegister();
       } catch (e) {

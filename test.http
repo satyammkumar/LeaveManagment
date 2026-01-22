@@ -1,0 +1,16 @@
+###
+GET http://localhost:4004/odata/v4/my-services/Employees
+
+### Look up the employee by email (get the keys)
+GET http://localhost:4004/odata/v4/my-services/Employees?$filter=email eq 't7@gmail.com'&$select=ID,employeeId,email
+
+###
+
+### Delete by employeeId (single key)
+DELETE http://localhost:4004/odata/v4/my-services/Employees(employeeId='E1007')
+
+###
+
+### Delete employee by composite key (ID + employeeId)
+DELETE http://localhost:4004/odata/v4/my-services/Employees(ID=guid'5e7c9f2a-1234-4a6a-9a11-0f5ce0f2abcd',employeeId='E1007')
+

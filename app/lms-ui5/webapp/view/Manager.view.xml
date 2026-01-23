@@ -1,4 +1,3 @@
-
 <mvc:View
   controllerName="lmsui5.controller.Manager"
   xmlns:mvc="sap.ui.core.mvc"
@@ -13,24 +12,23 @@
     <content>
       <VBox class="sapUiMediumMargin">
 
-        <!-- ======== Greeting & Main Actions ======== -->
+        <!-- Greeting & Main Actions -->
         <HBox width="100%" justifyContent="SpaceBetween" alignItems="Center">
-          <Title text="Manager, {user>/fullName}" level="H2"/>
+          <Title text="Manager Dashboard" level="H2"/>
           <HBox width="100%" justifyContent="End" alignItems="Center">
             <Button text="Logout" icon="sap-icon://log" press=".onLogout" class="lightRedButton"/>
           </HBox>
         </HBox>
 
-        <!-- ======== KPI Chip Row ======== -->
+        <!-- KPIs -->
         <HBox width="100%" class="sapUiSmallMarginTop" wrap="Wrap" renderType="Bare">
-          <ObjectStatus id="kpiPending"  title="Pending"  text="{view>/kpi/pending}"  state="Warning"  class="sapUiSmallMarginEnd"/>
-          <ObjectStatus id="kpiApproved" title="Approved Today" text="{view>/kpi/approvedToday}" state="Success" class="sapUiSmallMarginEnd"/>
-          <ObjectStatus id="kpiRejected" title="Rejected Today" text="{view>/kpi/rejectedToday}" state="Error"/>
+          <ObjectStatus id="kpiPending"  title="Pending"         text="{view>/kpi/pending}"       state="Warning" class="sapUiSmallMarginEnd"/>
+          <ObjectStatus id="kpiApproved" title="Approved Today"  text="{view>/kpi/approvedToday}" state="Success" class="sapUiSmallMarginEnd"/>
+          <ObjectStatus id="kpiRejected" title="Rejected Today"  text="{view>/kpi/rejectedToday}" state="Error"/>
         </HBox>
 
-        <!-- ======== Filter Bar ======== -->
+        <!-- Filter Bar -->
         <Toolbar class="sapUiMediumMarginTop">
-          <!-- Status (default Pending) -->
           <Select id="selStatus" width="10rem" change=".onStatusChange">
             <items>
               <core:Item key="Pending"  text="Pending"/>
@@ -41,7 +39,6 @@
             </items>
           </Select>
 
-          <!-- SubmittedAt date range filter -->
           <DateRangeSelection id="drSubmitted"
                               displayFormat="medium"
                               delimiter="→"
@@ -49,7 +46,6 @@
                               width="16rem"
                               class="sapUiTinyMarginBegin"/>
 
-          <!-- Search across employee/leave/Reason -->
           <SearchField id="reqSearch"
                        placeholder="Search: employee, leave type, or reason"
                        width="22rem"
@@ -58,11 +54,11 @@
                        class="sapUiTinyMarginBegin"/>
 
           <ToolbarSpacer/>
-          <Button text="Clear" icon="sap-icon://reset" press=".onClearFilters"/>
+          <Button text="Clear"   icon="sap-icon://reset"   press=".onClearFilters"/>
           <Button text="Refresh" icon="sap-icon://refresh" type="Emphasized" press=".onRefresh"/>
         </Toolbar>
 
-        <!-- ======== Actions above table (bulk) ======== -->
+        <!-- Bulk actions -->
         <Toolbar>
           <Title text="Requests from Your Team"/>
           <ToolbarSpacer/>
@@ -70,32 +66,30 @@
           <Button id="btnRejectSel"  text="Reject Selected"  type="Reject" icon="sap-icon://decline" enabled="false" press=".onRejectSelected" class="sapUiTinyMarginBegin"/>
         </Toolbar>
 
-        <!-- ======== Worklist Table ======== -->
+        <!-- Worklist Table (V4) -->
         <Table id="tblRequests"
                mode="MultiSelect"
                growing="true"
                growingScrollToLoad="true"
                items="{
                  path: '/LeaveRequests',
-                 parameters: {
-                   $count: true,
-                   $expand: 'employee,leaveType'
-                 }
+                 parameters: { $count: true },  
+                 templateShareable: false
                }"
                updateFinished=".onUpdateFinished"
-               itemPress=".onItemPress"
+               selectionChange=".onSelectionChange"
                class="sapUiMediumMarginTop">
 
           <headerToolbar>
             <Toolbar>
               <Title text="Leave Requests"/>
               <ToolbarSpacer/>
-              <Text id="txtCount" text="({= ${/LeaveRequests/$count} || '' })"/>
+              <Text id="txtCount" text="{view>/counts/leaveRequests}"/>
             </Toolbar>
           </headerToolbar>
 
           <columns>
-            <Column width="16rem"><Text text="Employee"/></Column>
+            <Column width="18rem"><Text text="Employee Name"/></Column>
             <Column width="12rem"><Text text="Leave Type"/></Column>
             <Column width="16rem"><Text text="Period"/></Column>
             <Column width="8rem"  hAlign="End"><Text text="Days"/></Column>
@@ -107,13 +101,17 @@
           <items>
             <ColumnListItem type="Active" press=".onRowPress">
               <cells>
-                <!-- Employee -->
-                <ObjectIdentifier title="{employee/firstName} {employee/lastName}"
-                                  text="{employee/employeeId}"/>
+                <!-- EMPLOYEE NAME -->
+                <Text text="{
+                  path: 'employee_employeeId',
+                  formatter: '.formatEmployeeFullName'
+                }"/>
 
-                <!-- Leave Type -->
-                <ObjectIdentifier title="{leaveType/code}"
-                                  text="{leaveType/description}"/>
+                <!-- LEAVE TYPE -->
+                <Text text="{
+                  path: 'leaveType_code',
+                  formatter: '.formatLeaveTypeDesc'
+                }"/>
 
                 <!-- Period -->
                 <Text text="{ parts: [{path:'startDate'},{path:'endDate'}], formatter: '.formatDateRange' }"/>
@@ -142,25 +140,31 @@
           </items>
         </Table>
 
-        <!-- ======== Empty State ======== -->
-        <MessageStrip
-          id="msEmpty"
+        <!-- Empty State -->
+        <MessageStrip id="msEmpty"
           text="No matching requests. Adjust filters or refresh."
           type="Information"
           showIcon="true"
           visible="false"
           class="sapUiSmallMarginTop"/>
 
-        <!-- ======== Details Popover ======== -->
-        <ResponsivePopover id="popDetails" placement="Auto" title="Leave Request">
-          <VBox class="sapUiSmallMargin">
-            <ObjectAttribute title="Employee" text="{employee/firstName} {employee/lastName} ({employee/employeeId})"/>
-            <ObjectAttribute title="Email" text="{employee/email}"/>
-            <ObjectAttribute title="Leave Type" text="{leaveType/code} - {leaveType/description}"/>
-            <ObjectAttribute title="Period" text="{ parts: [{path:'startDate'},{path:'endDate'}], formatter: '.formatDateRange' }"/>
-            <ObjectAttribute title="Days" text="{daysRequested}"/>
-            <ObjectAttribute title="Submitted" text="{ path: 'submittedAt', formatter: '.formatDateTime' }"/>
-            <ObjectAttribute title="Reason" text="{reason}"/>
+        <!-- Details Popover -->
+        <ResponsivePopover id="popDetails" placement="Auto" title="Leave Request Details">
+          <VBox class="sapUiSmallMargin" width="400px">
+            <ObjectAttribute title="Employee Name"
+              text="{
+                path: 'employee_employeeId',
+                formatter: '.formatEmployeeFullName'
+              }"/>
+            <ObjectAttribute title="Leave Type"
+              text="{
+                path: 'leaveType_code',
+                formatter: '.formatLeaveTypeFullDesc'
+              }"/>
+            <ObjectAttribute title="Period"     text="{ parts: [{path:'startDate'},{path:'endDate'}], formatter: '.formatDateRange' }"/>
+            <ObjectAttribute title="Days"       text="{daysRequested}"/>
+            <ObjectAttribute title="Submitted"  text="{ path: 'submittedAt', formatter: '.formatDateTime' }"/>
+            <ObjectAttribute title="Reason"     text="{reason}"/>
             <ObjectStatus title="Status" text="{status}" state="{ path: 'status', formatter: '.formatStatusState' }"/>
             <HBox class="sapUiSmallMarginTop" justifyContent="End">
               <Button text="Approve" type="Accept" icon="sap-icon://accept" press=".onApproveFromPopover"
@@ -171,6 +175,45 @@
             </HBox>
           </VBox>
         </ResponsivePopover>
+
+        <!-- Reject Comment Dialog -->
+        <Dialog id="rejectCommentDialog" title="Reject Leave Request" type="Message" contentHeight="auto" contentWidth="50%">
+          <content>
+            <VBox class="sapUiSmallMargin" width="100%">
+              <ObjectAttribute title="Employee Name" 
+                text="{view>/rejectData/employeeName}"/>
+
+              <ObjectAttribute title="Leave Type" 
+                text="{view>/rejectData/leaveType}" 
+                class="sapUiSmallMarginTop"/>
+
+              <Label text="Rejection Comments (Required)" 
+                class="sapUiSmallMarginTop sapUiMediumMarginBottom"/>
+              
+              <TextArea id="taRejectComments"
+                        value="{
+                          path: 'view>/rejectData/comments',
+                          type: 'sap.ui.model.type.String'
+                        }"
+                        change=".onCommentChange"
+                        rows="5"
+                          placeholder="Enter reason for rejection..."
+                        width="90%"
+                        class="sapUiSmallMargin"/>
+              
+              <HBox justifyContent="End" class="sapUiSmallMarginTop">
+                <Text text="{view>/rejectData/commentLength}/500" 
+                  class="sapUiSmallMargin"/>
+              </HBox>
+            </VBox>
+          </content>
+          <beginButton>
+            <Button text="Reject" type="Reject" press=".onConfirmReject"/>
+          </beginButton>
+          <endButton>
+            <Button text="Cancel" press=".onCancelReject"/>
+          </endButton>
+        </Dialog>
 
       </VBox>
     </content>

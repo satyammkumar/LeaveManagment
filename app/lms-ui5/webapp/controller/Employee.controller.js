@@ -1,3 +1,4 @@
+
 sap.ui.define([
   "sap/ui/core/mvc/Controller",
   "sap/ui/model/Filter",
@@ -17,44 +18,55 @@ sap.ui.define([
         this.getOwnerComponent().setModel(new JSONModel({}), "user");
       }
 
-      // Prepare transient model for Apply Leave dialog
+      // Transient model for Apply Leave
       this.getView().setModel(new JSONModel(this._buildApplyLeaveModelData()), "applyLeave");
 
       // Route → load employee data when navigated with { username } (email)
       const oRouter = this.getOwnerComponent().getRouter();
       oRouter.getRoute("Employee").attachPatternMatched(this._onRouteMatched, this);
 
-      // Apply filter by employeeId after table is visible/bound
+      // Apply filter by employeeId & refresh data after page is visible
       this.getView().addEventDelegate({
         onAfterShow: function () {
           this._applyEmployeeFilter();
+          this._refreshOwnLeaveData(); // 🔄 keep page up to date when user returns
         }.bind(this)
       });
+
+      // 🔔 Subscribe to leave change events (submitted/approved/rejected/cancelled)
+      this._bus = sap.ui.getCore().getEventBus();
+      this._bus.subscribe("leave", "changed", this._onLeaveChanged, this);
+    },
+
+    onExit: function () {
+      // Clean up dialog and event subscriptions
+      if (this._pApplyLeaveDlg) {
+        this._pApplyLeaveDlg.then(function (oDialog) { oDialog.destroy(); });
+        this._pApplyLeaveDlg = null;
+      }
+      if (this._bus) {
+        this._bus.unsubscribe("leave", "changed", this._onLeaveChanged, this);
+      }
     },
 
     /** Load employee profile by email via CAP action and set user model */
     getEmployeeData: async function (sUsername) {
-      // Basic email validation
       const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailPattern.test(sUsername)) {
         this._showError("Please enter a valid email address.");
         return;
       }
 
-      const msgStrip = this.byId("msg"); // if present in view
+      const msgStrip = this.byId("msg");
       if (msgStrip) msgStrip.setVisible(false);
 
       try {
-        console.log("Calling API with username:", sUsername);
-
-        // POST to CAP action 
         const res = await fetch("/odata/v4/my-services/getEmployeeData", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ email: sUsername })
         });
 
-        // Robust error handling with clone fallback
         if (!res.ok) {
           const resClone = res.clone();
           let errTxt = "Failed to fetch employee data";
@@ -63,36 +75,27 @@ sap.ui.define([
           throw new Error(errTxt);
         }
 
-        // Read the body exactly once
         const data = await res.json();
-        console.log("Employee data received:", data);
 
-        // Update 'user' model with flattened employee fields
         const oUserModel = this.getOwnerComponent().getModel("user");
         if (oUserModel && data.employee) {
           oUserModel.setProperty("/id", data.employee.id);
-          oUserModel.setProperty("/employeeId", data.employee.employeeID); // mapping from action result
+          oUserModel.setProperty("/employeeId", data.employee.employeeID);
           oUserModel.setProperty("/firstName", data.employee.firstName);
           oUserModel.setProperty("/lastName", data.employee.lastName);
           oUserModel.setProperty("/email", data.employee.email);
           oUserModel.setProperty("/department", data.employee.department);
           oUserModel.setProperty("/managerId", data.employee.managerID);
 
-          // Derived full name for header greeting
           const fullName = `${data.employee.firstName || ""} ${data.employee.lastName || ""}`.trim();
           oUserModel.setProperty("/fullName", fullName);
 
-          // If backend returns leave balances inline (optional)
           if (data.leaveBalances && Array.isArray(data.leaveBalances)) {
             oUserModel.setProperty("/leaveBalances", data.leaveBalances);
-            console.log("Leave balances stored:", data.leaveBalances);
           }
-
-          console.log("User model updated:", oUserModel.getData());
         }
 
         MessageToast.show("Employee data loaded successfully");
-        // Re-apply filter after data is set
         this._applyEmployeeFilter();
 
       } catch (err) {
@@ -110,31 +113,26 @@ sap.ui.define([
       const oArgs = oEvent.getParameter("arguments");
       const sUsername = oArgs.username;
 
-      console.log("Route parameter (username):", sUsername);
-
       const authModel = this.getOwnerComponent().getModel("auth");
       if (authModel && sUsername) {
         authModel.setProperty("/username", sUsername);
       }
 
       if (sUsername) {
-        // Load employee profile immediately
         this.getEmployeeData(sUsername);
       }
     },
 
-    /** Apply table filter: LeaveBalance for current employeeId */
+    /** Apply table filter: LeaveBalances for current employeeId */
     _applyEmployeeFilter: function () {
       const oUserModel = this.getOwnerComponent().getModel("user");
       const sEmpId = oUserModel && oUserModel.getProperty("/employeeId");
-      console.log("Filtering by employeeId:", sEmpId);
 
       const oTable = this.byId("balancesTable");
       const oBinding = oTable?.getBinding("items");
       if (!oBinding) return;
 
       if (sEmpId) {
-        // Use nav property if supported; else use FK column: "employee_employeeId"
         const aFilters = [new Filter("employee/employeeId", FilterOperator.EQ, sEmpId)];
         oBinding.filter(aFilters);
       } else {
@@ -192,26 +190,18 @@ sap.ui.define([
       }
     },
 
-    /** Logout: clear models, clear remembered email (optional), navigate to Login, replace history */
+    /** Logout */
     onLogout: function () {
-      // Clear user model
       const oUserModel = this.getOwnerComponent().getModel("user");
-      if (oUserModel) {
-        oUserModel.setData({});
-      }
+      if (oUserModel) oUserModel.setData({});
 
-      // Clear auth model
       const authModel = this.getOwnerComponent().getModel("auth");
-      if (authModel) {
-        authModel.setData({});
-      }
+      if (authModel) authModel.setData({});
 
       try { localStorage.removeItem("login_email"); } catch (e) {}
 
       const oODataModel = this.getOwnerComponent().getModel("");
-      if (oODataModel && oODataModel.refresh) {
-        oODataModel.refresh();
-      }
+      if (oODataModel?.refresh) oODataModel.refresh();
 
       this.getOwnerComponent().getRouter().navTo("Login", {}, true);
     },
@@ -224,23 +214,20 @@ sap.ui.define([
       return "Success";
     },
 
-
+    // ========= Apply Leave Dialog =========
     onOpenApplyLeave: function () {
-      // Refresh transient data to current employee context
       const oApplyModel = this.getView().getModel("applyLeave");
       oApplyModel.setData(this._buildApplyLeaveModelData());
 
-      // Give the fragment an ID prefix scoped to this view
       const sFragId = this.getView().getId() + "--applyLeaveFrag";
 
-      // Lazy-load fragment only once
       if (!this._pApplyLeaveDlg) {
         this._pApplyLeaveDlg = Fragment.load({
-          name: "lmsui5.view.ApplyLeave",   // adjust if your file is under /fragments
+          name: "lmsui5.view.ApplyLeave",
           controller: this,
           id: sFragId
         }).then(function (oDialog) {
-          this.getView().addDependent(oDialog); // inherit models/lifecycle
+          this.getView().addDependent(oDialog);
           return oDialog;
         }.bind(this)).catch(function (e) {
           console.error("Fragment load failed:", e);
@@ -249,14 +236,10 @@ sap.ui.define([
       }
 
       this._pApplyLeaveDlg.then(function (oDialog) {
-        // Access the calendar within the fragment using Fragment.byId
         const oCalendar = Fragment.byId(sFragId, "leaveCalendar");
         if (oCalendar) {
-          // Enforce single interval selection (start + end only)
           if (oCalendar.setSingleSelection) oCalendar.setSingleSelection(true);
           if (oCalendar.setIntervalSelection) oCalendar.setIntervalSelection(true);
-
-          // Clear any previous selection
           oCalendar.removeAllSelectedDates();
         }
         oDialog.open();
@@ -268,119 +251,104 @@ sap.ui.define([
 
       if (this._pApplyLeaveDlg) {
         this._pApplyLeaveDlg.then(function (oDialog) {
-          // Clear calendar selection on cancel
           const oCalendar = Fragment.byId(sFragId, "leaveCalendar");
-          if (oCalendar) {
-            oCalendar.removeAllSelectedDates();
-          }
+          if (oCalendar) oCalendar.removeAllSelectedDates();
           oDialog.close();
         });
       }
-      // Reset transient model back to defaults (based on logged-in employee)
       this.getView().getModel("applyLeave").setData(this._buildApplyLeaveModelData());
     },
 
-   
-onCalendarSelect: function (oEvent) {
-  const oCalendar = oEvent.getSource();
-  const aRanges = oCalendar.getSelectedDates() || [];
-  const oRange = aRanges[0];  // single interval only
+    onCalendarSelect: function (oEvent) {
+      const oCalendar = oEvent.getSource();
+      const aRanges = oCalendar.getSelectedDates() || [];
+      const oRange = aRanges[0];  // single interval only
+      const oModel = this.getView().getModel("applyLeave");
 
-  const oModel = this.getView().getModel("applyLeave");
+      if (oRange) {
+        const start = oRange.getStartDate();
+        const end = oRange.getEndDate() || start;
 
-  if (oRange) {
-    const start = oRange.getStartDate();
-    const end = oRange.getEndDate() || start; // single-day if end missing
+        const startISO = this._toISODate(start);
+        const endISO = this._toISODate(end);
 
-    const startISO = this._toISODate(start);
-    const endISO = this._toISODate(end);
+        const aBusinessISO = this._expandBusinessDates(start, end);
+        const businessDays = aBusinessISO.length;
 
-    // Expand to weekdays only (Mon–Fri)
-    const aBusinessISO = this._expandBusinessDates(start, end);
-    const businessDays = aBusinessISO.length;
+        oModel.setProperty("/startDate", start);
+        oModel.setProperty("/endDate", end);
+        oModel.setProperty("/startDateISO", startISO);
+        oModel.setProperty("/endDateISO", endISO);
+        oModel.setProperty("/totalDays", businessDays);
+        oModel.setProperty("/selectedDates", aBusinessISO);
+        oModel.setProperty("/rangeText", businessDays
+          ? `Selected: ${startISO} → ${endISO} (${businessDays} business day${businessDays > 1 ? "s" : ""})`
+          : `Selected: ${startISO} → ${endISO} (0 business days — weekends excluded)`);
+      } else {
+        oModel.setProperty("/startDate", null);
+        oModel.setProperty("/endDate", null);
+        oModel.setProperty("/startDateISO", "");
+        oModel.setProperty("/endDateISO", "");
+        oModel.setProperty("/totalDays", 0);
+        oModel.setProperty("/selectedDates", []);
+        oModel.setProperty("/rangeText", "");
+      }
+    },
 
-    // Update transient model
-    oModel.setProperty("/startDate", start);
-    oModel.setProperty("/endDate", end);
-    oModel.setProperty("/startDateISO", startISO);
-    oModel.setProperty("/endDateISO", endISO);
-    oModel.setProperty("/totalDays", businessDays);
-    oModel.setProperty("/selectedDates", aBusinessISO);
-    oModel.setProperty("/rangeText", businessDays
-      ? `Selected: ${startISO} → ${endISO} (${businessDays} business day${businessDays > 1 ? "s" : ""})`
-      : `Selected: ${startISO} → ${endISO} (0 business days — weekends excluded)`);
-  } else {
-    // Reset when nothing selected
-    oModel.setProperty("/startDate", null);
-    oModel.setProperty("/endDate", null);
-    oModel.setProperty("/startDateISO", "");
-    oModel.setProperty("/endDateISO", "");
-    oModel.setProperty("/totalDays", 0);
-    oModel.setProperty("/selectedDates", []);
-    oModel.setProperty("/rangeText", "");
-  }
-},
+    /** Final submit: call CAP action and sync UI */
+    onSubmitLeave: async function () {
+      const oApply = this.getView().getModel("applyLeave");
+      const sEmployeeId = this.getOwnerComponent().getModel("user")?.getProperty("/employeeId");
 
+      const sLeaveType = oApply.getProperty("/selectedLeaveType");
+      const sStart = oApply.getProperty("/startDateISO");
+      const sEnd   = oApply.getProperty("/endDateISO");
+      const sReason = (oApply.getProperty("/reason") || "").trim();
 
-onSubmitLeave: async function () {
-  const oApply = this.getView().getModel("applyLeave");
-  const sLeaveType = oApply.getProperty("/selectedLeaveType");
-  const aDates = oApply.getProperty("/selectedDates"); // already weekday-only
-  const sReason = oApply.getProperty("/reason") || "";
+      if (!sLeaveType) {
+        return MessageBox.warning("Please select a leave type.");
+      }
+      if (!sStart || !sEnd) {
+        return MessageBox.warning("Please select a valid date range.");
+      }
 
-  if (!sLeaveType) {
-    MessageBox.warning("Please select a leave type.");
-    return;
-  }
-  if (!aDates || !aDates.length) {
-    MessageBox.warning("Please select a range that includes at least one weekday (Mon–Fri).");
-    return;
-  }
+      try {
+        // --- OData V4 action call ---
+        const oModel = this.getView().getModel();
+        const oCtx = oModel.bindContext("/submitLeaveRequest(...)");
+        oCtx.setParameter("employeeId",    sEmployeeId);
+        oCtx.setParameter("leaveTypeCode", sLeaveType);
+        oCtx.setParameter("startDate",     sStart);  // 'YYYY-MM-DD'
+        oCtx.setParameter("endDate",       sEnd);    // 'YYYY-MM-DD'
+        oCtx.setParameter("reason",        sReason);
+        await oCtx.execute();
 
-  const sEmployeeId = this.getOwnerComponent().getModel("user")?.getProperty("/employeeId");
-  const payload = {
-    employeeId: sEmployeeId,
-    leaveTypeCode: sLeaveType,
-    dates: aDates,   // array of weekdays only, 'YYYY-MM-DD'
-    reason: sReason
-  };
+        MessageToast.show("Leave application submitted.");
+        this.onCancelApplyLeave();
 
-  try {
-    console.log("Leave payload:", payload);
+        // 🔄 Immediately refresh my view (OData table + JSON summary)
+        await this._refreshOwnLeaveData();
 
-    // TODO: Call backend (OData V4 or CAP REST)
-    // const oModel = this.getOwnerComponent().getModel();
-    // const list = oModel.bindList("/LeaveRequests");
-    // const ctx = list.create(payload);
-    // await ctx.created();
-
-    MessageToast.show(`Leave application submitted for ${aDates.length} business day(s).`);
-    this.onCancelApplyLeave();
-    if (this.onRefresh) this.onRefresh();
-  } catch (e) {
-    console.error("Submit leave error:", e);
-    MessageBox.error(e.message || "Failed to submit leave request");
-  }
-},
-
-
-    onExit: function () {
-      if (this._pApplyLeaveDlg) {
-        this._pApplyLeaveDlg.then(function (oDialog) {
-          oDialog.destroy();
+        // 🔔 Notify other views (e.g., Manager) & other tabs
+        sap.ui.getCore().getEventBus().publish("leave", "changed", {
+          employeeId: sEmployeeId,
+          source: "employee",
+          change: "submitted"
         });
-        this._pApplyLeaveDlg = null;
+
+      } catch (e) {
+        console.error("Submit leave error:", e);
+        MessageBox.error(e.message || "Failed to submit leave request");
       }
     },
 
     // =========================
     // Helpers
     // =========================
-
     _buildApplyLeaveModelData: function () {
       return {
         selectedLeaveType: "",
-        leaveTypes: this._getAvailableLeaveTypes(), // unique list of types
+        leaveTypes: this._getAvailableLeaveTypes(),
         minDate: this._getTodayStart(),
         maxDate: this._getYearEnd(),
         startDate: null,
@@ -388,7 +356,7 @@ onSubmitLeave: async function () {
         startDateISO: "",
         endDateISO: "",
         totalDays: 0,
-        selectedDates: [],   // expanded array of ISO dates
+        selectedDates: [],
         rangeText: "",
         reason: ""
       };
@@ -398,7 +366,6 @@ onSubmitLeave: async function () {
       const oUser = this.getOwnerComponent().getModel("user");
       const unique = new Map();
 
-      // Prefer explicit `/leaveTypes` if present
       const aTypes = oUser?.getProperty("/leaveTypes");
       if (Array.isArray(aTypes) && aTypes.length) {
         aTypes.forEach(function (t) {
@@ -408,7 +375,6 @@ onSubmitLeave: async function () {
         });
       }
 
-      // Fallback: derive types from `/leaveBalances`
       const aBalances = oUser?.getProperty("/leaveBalances") || [];
       aBalances.forEach(function (b) {
         const code = b.leaveTypeCode;
@@ -416,7 +382,6 @@ onSubmitLeave: async function () {
         if (code && !unique.has(code)) unique.set(code, { code, description: desc });
       });
 
-      // Final fallback: static defaults
       if (unique.size === 0) {
         return [
           { code: "CL", description: "Casual Leave" },
@@ -435,7 +400,7 @@ onSubmitLeave: async function () {
 
     _getYearEnd: function () {
       const d = new Date();
-      d.setMonth(11, 31); // Dec 31
+      d.setMonth(11, 31);
       d.setHours(23, 59, 59, 999);
       return d;
     },
@@ -447,42 +412,70 @@ onSubmitLeave: async function () {
       return `${y}-${m}-${d}`;
     },
 
-    _diffDaysInclusive: function (start, end) {
-      const msPerDay = 24 * 60 * 60 * 1000;
-      const s = new Date(start.getFullYear(), start.getMonth(), start.getDate());
-      const e = new Date(end.getFullYear(), end.getMonth(), end.getDate());
-      return Math.floor((e - s) / msPerDay) + 1;
+    _isWeekend: function (dateObj) {
+      const day = dateObj.getDay(); // 0=Sun, 6=Sat
+      return day === 0 || day === 6;
     },
 
-    _expandDates: function (start, end) {
+    _expandBusinessDates: function (start, end) {
       const out = [];
       const d = new Date(start.getFullYear(), start.getMonth(), start.getDate());
       const last = new Date(end.getFullYear(), end.getMonth(), end.getDate());
       while (d <= last) {
-        out.push(this._toISODate(d));
+        if (!this._isWeekend(d)) {
+          out.push(this._toISODate(d));
+        }
         d.setDate(d.getDate() + 1);
       }
       return out;
     },
-    
-_isWeekend: function (dateObj) {
-  const day = dateObj.getDay(); // 0=Sun, 6=Sat
-  return day === 0 || day === 6;
-},
 
-_expandBusinessDates: function (start, end) {
-  const out = [];
-  const d = new Date(start.getFullYear(), start.getMonth(), start.getDate());
-  const last = new Date(end.getFullYear(), end.getMonth(), end.getDate());
-  while (d <= last) {
-    if (!this._isWeekend(d)) {
-      out.push(this._toISODate(d));
+    /** 🔁 Centralized self-refresh after any change for this employee */
+    _refreshOwnLeaveData: async function () {
+      // 1) Refresh the OData LeaveBalances table binding (keeps filters applied)
+      const balBinding = this.byId("balancesTable")?.getBinding("items");
+      balBinding?.refresh();
+
+      // 2) Refresh the top “Leave Summary” in the local JSON 'user' model
+      try {
+        const username = this.getOwnerComponent().getModel("auth")?.getProperty("/username");
+        if (username) {
+          const res = await fetch("/odata/v4/my-services/getEmployeeData", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: username })
+          });
+          if (res.ok) {
+            const data = await res.json();
+            const oUserModel = this.getOwnerComponent().getModel("user");
+            if (oUserModel && data.employee) {
+              // Only update balances to keep other user info intact
+              oUserModel.setProperty("/leaveBalances", data.leaveBalances || []);
+            }
+          }
+        }
+      } catch (e) {
+        // It's okay if this fails; OData table is still refreshed
+        // console.warn("Failed to reload getEmployeeData:", e);
+      }
+    },
+
+    /** 🔔 EventBus callback: refresh only if the change is for THIS employee */
+    _onLeaveChanged: function (sChannel, sEvent, oData) {
+      try {
+        const myEmpId = this.getOwnerComponent().getModel("user")?.getProperty("/employeeId");
+        if (!myEmpId) return;
+
+        if (oData && oData.employeeId && oData.employeeId !== myEmpId) {
+          return; // event for another employee, ignore
+        }
+
+        // Same employee → refresh my view
+        this._refreshOwnLeaveData();
+      } catch (e) {
+        // no-op
+      }
     }
-    d.setDate(d.getDate() + 1);
-  }
-  return out;
-},
-
 
   });
 });

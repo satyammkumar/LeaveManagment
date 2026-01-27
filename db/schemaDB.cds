@@ -31,6 +31,7 @@ entity LeaveType : cuid, managed {
 }
 
 entity LeaveRequest : cuid, managed {
+  empname:String(200);
   employee      : Association to Employee;
   leaveType     : Association to LeaveType;
   startDate     : Date;

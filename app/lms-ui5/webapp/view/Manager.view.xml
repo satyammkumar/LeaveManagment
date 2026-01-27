@@ -66,14 +66,14 @@
           <Button id="btnRejectSel"  text="Reject Selected"  type="Reject" icon="sap-icon://decline" enabled="false" press=".onRejectSelected" class="sapUiTinyMarginBegin"/>
         </Toolbar>
 
-        <!-- Worklist Table (V4) -->
+        <!-- Worklist Table -->
         <Table id="tblRequests"
                mode="MultiSelect"
                growing="true"
                growingScrollToLoad="true"
                items="{
                  path: '/LeaveRequests',
-                 parameters: { $count: true },  
+                 parameters: { $count: true },
                  templateShareable: false
                }"
                updateFinished=".onUpdateFinished"
@@ -101,31 +101,24 @@
           <items>
             <ColumnListItem type="Active" press=".onRowPress">
               <cells>
-                <!-- EMPLOYEE NAME -->
-                <Text text="{
-                  path: 'employee_employeeId',
-                  formatter: '.formatEmployeeFullName'
-                }"/>
+                <!-- EMPLOYEE NAME - Uses lookup map formatter -->
+                <Text text="{path: 'employee_employeeId', formatter: '.formatEmployeeName'}" /> 
+                <!-- LEAVE TYPE DESCRIPTION -->
+                <Text text="{ path: 'leaveType_code', formatter: '.formatLeaveTypeDesc' }"/>
 
-                <!-- LEAVE TYPE -->
-                <Text text="{
-                  path: 'leaveType_code',
-                  formatter: '.formatLeaveTypeDesc'
-                }"/>
-
-                <!-- Period -->
+                <!-- DATE RANGE -->
                 <Text text="{ parts: [{path:'startDate'},{path:'endDate'}], formatter: '.formatDateRange' }"/>
 
-                <!-- Days -->
-                <Text text="{path: 'daysRequested'}"/>
+                <!-- DAYS REQUESTED -->
+                <Text text="{daysRequested}"/>
 
-                <!-- Reason -->
+                <!-- REASON -->
                 <Text text="{reason}" wrapping="true" maxLines="2"/>
 
-                <!-- Status -->
+                <!-- STATUS -->
                 <ObjectStatus text="{status}" state="{ path: 'status', formatter: '.formatStatusState' }"/>
 
-                <!-- Row actions -->
+                <!-- ROW ACTIONS -->
                 <HBox justifyContent="End" width="100%">
                   <Button text="Approve" type="Accept" icon="sap-icon://accept"
                           press=".onApproveOne"
@@ -152,19 +145,17 @@
         <ResponsivePopover id="popDetails" placement="Auto" title="Leave Request Details">
           <VBox class="sapUiSmallMargin" width="400px">
             <ObjectAttribute title="Employee Name"
-              text="{
-                path: 'employee_employeeId',
-                formatter: '.formatEmployeeFullName'
-              }"/>
+              text="{ path: 'employee_employeeId', formatter: '.formatEmployeeFullName' }"/>
             <ObjectAttribute title="Leave Type"
-              text="{
-                path: 'leaveType_code',
-                formatter: '.formatLeaveTypeFullDesc'
-              }"/>
-            <ObjectAttribute title="Period"     text="{ parts: [{path:'startDate'},{path:'endDate'}], formatter: '.formatDateRange' }"/>
-            <ObjectAttribute title="Days"       text="{daysRequested}"/>
-            <ObjectAttribute title="Submitted"  text="{ path: 'submittedAt', formatter: '.formatDateTime' }"/>
-            <ObjectAttribute title="Reason"     text="{reason}"/>
+              text="{ path: 'leaveType_code', formatter: '.formatLeaveTypeFullDesc' }"/>
+            <ObjectAttribute title="Period"
+              text="{ parts: [{path:'startDate'},{path:'endDate'}], formatter: '.formatDateRange' }"/>
+            <ObjectAttribute title="Days"
+              text="{daysRequested}"/>
+            <ObjectAttribute title="Submitted"
+              text="{ path: 'submittedAt', formatter: '.formatDateTime' }"/>
+            <ObjectAttribute title="Reason"
+              text="{reason}"/>
             <ObjectStatus title="Status" text="{status}" state="{ path: 'status', formatter: '.formatStatusState' }"/>
             <HBox class="sapUiSmallMarginTop" justifyContent="End">
               <Button text="Approve" type="Accept" icon="sap-icon://accept" press=".onApproveFromPopover"
@@ -180,30 +171,19 @@
         <Dialog id="rejectCommentDialog" title="Reject Leave Request" type="Message" contentHeight="auto" contentWidth="50%">
           <content>
             <VBox class="sapUiSmallMargin" width="100%">
-              <ObjectAttribute title="Employee Name" 
-                text="{view>/rejectData/employeeName}"/>
+              <ObjectAttribute title="Employee Name" text="{view>/rejectData/employeeName}"/>
+              <ObjectAttribute title="Leave Type" text="{view>/rejectData/leaveType}" class="sapUiSmallMarginTop"/>
 
-              <ObjectAttribute title="Leave Type" 
-                text="{view>/rejectData/leaveType}" 
-                class="sapUiSmallMarginTop"/>
-
-              <Label text="Rejection Comments (Required)" 
-                class="sapUiSmallMarginTop sapUiMediumMarginBottom"/>
-              
+              <Label text="Rejection Comments (Required)" class="sapUiSmallMarginTop sapUiMediumMarginBottom"/>
               <TextArea id="taRejectComments"
-                        value="{
-                          path: 'view>/rejectData/comments',
-                          type: 'sap.ui.model.type.String'
-                        }"
+                        value="{ path: 'view>/rejectData/comments', type: 'sap.ui.model.type.String' }"
                         change=".onCommentChange"
                         rows="5"
-                          placeholder="Enter reason for rejection..."
+                        placeholder="Enter reason for rejection..."
                         width="90%"
                         class="sapUiSmallMargin"/>
-              
               <HBox justifyContent="End" class="sapUiSmallMarginTop">
-                <Text text="{view>/rejectData/commentLength}/500" 
-                  class="sapUiSmallMargin"/>
+                <Text text="{view>/rejectData/commentLength}/500" class="sapUiSmallMargin"/>
               </HBox>
             </VBox>
           </content>

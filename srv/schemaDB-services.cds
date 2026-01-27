@@ -82,11 +82,12 @@ service MyServices {
   };
 
   // Get employee leave requests
-  action getEmployeeLeaveRequests(employeeID: String) returns {
+  action leaveRequests(employeeID: String) returns {
     success: Boolean;
     message: String;
     requests: array of {
       id: String;
+      empname:String;
       leaveType: String;
       startDate: Date;
       endDate: Date;

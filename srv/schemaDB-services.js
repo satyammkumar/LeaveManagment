@@ -1,4 +1,3 @@
-
 // srv/schemaDB-service.js
 const cds = require("@sap/cds");
 const bcrypt = require("bcryptjs");
@@ -104,25 +103,36 @@ module.exports = cds.service.impl(async function () {
   });
 
   // -------------------- Actions --------------------
+
   /** Submit Leave Request */
   this.on("submitLeaveRequest", async (req) => {
     const tx = cds.transaction(req);
     const { employeeId, leaveTypeCode, startDate, endDate, reason } = req.data;
 
+    // 1) Fetch employee
     const employee = await tx.run(SELECT.one.from(Employees).where({ employeeId }));
     if (!employee) req.reject(400, "Invalid employee.");
 
+    // Name fallback
+    const empName = [employee.firstName, employee.lastName].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+    const finalEmpName = empName || employee.email || employee.employeeId;
+
+    // 2) Validate leave type
     const leaveType = await tx.run(SELECT.one.from(LeaveTypes).where({ code: leaveTypeCode }));
     if (!leaveType) req.reject(400, "Invalid leave type.");
 
+    // 4) Prepare entry
     const entry = {
       employee_employeeId: employeeId,
       leaveType_code:      leaveTypeCode,
-      startDate, endDate,
+      startDate,
+      endDate,
       reason: (reason || "").trim(),
-      status: "Pending"
+      status: "Pending",
+      empname: finalEmpName,
     };
 
+    // 5) Insert with robust fallback
     let created;
     try {
       const res = await tx.run(INSERT.into(LeaveRequests).entries(entry).returning("*"));
@@ -134,10 +144,20 @@ module.exports = cds.service.impl(async function () {
         ? await tx.run(SELECT.one.from(LeaveRequests).where({ ID: createdId }))
         : await tx.run(
             SELECT.one.from(LeaveRequests)
-              .where({ employee_employeeId: employeeId, leaveType_code: leaveTypeCode, startDate, endDate })
+              .where({
+                employee_employeeId: employeeId,
+                leaveType_code: leaveTypeCode,
+                startDate,
+                endDate
+              })
               .orderBy({ submittedAt: "desc" })
           );
     }
+
+    if (created) {
+      created.empName = finalEmpName;
+    }
+
     return created;
   });
 
@@ -282,11 +302,10 @@ module.exports = cds.service.impl(async function () {
     }
   });
 
-  // ==================== REGISTER (as you had) ====================
+  // ==================== REGISTER (placeholder) ====================
   this.on("register", async (req) => {
-    // (your existing implementation here – unchanged)
-    // Keep or adapt as you already wrote; it is independent of the FK changes above.
-    // ...
+    // Your existing implementation here...
+    return { success: false, message: "Not implemented", employeeId: "" };
   });
 
   // ---------- GET EMPLOYEE DATA ----------
@@ -332,4 +351,7 @@ module.exports = cds.service.impl(async function () {
       return { success: false, message: "An error occurred retrieving employee data" };
     }
   });
+
+  
+
 });

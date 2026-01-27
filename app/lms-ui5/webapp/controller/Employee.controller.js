@@ -191,20 +191,41 @@ sap.ui.define([
     },
 
     /** Logout */
-    onLogout: function () {
-      const oUserModel = this.getOwnerComponent().getModel("user");
-      if (oUserModel) oUserModel.setData({});
+onLogout: function () {
+  var that = this;
 
-      const authModel = this.getOwnerComponent().getModel("auth");
-      if (authModel) authModel.setData({});
+  sap.m.MessageBox.confirm("Are you sure you want to logout?", {
+    actions: [sap.m.MessageBox.Action.OK, sap.m.MessageBox.Action.CANCEL],
+    emphasizedAction: sap.m.MessageBox.Action.OK,
+    onClose: function (sAction) {
+      if (sAction !== sap.m.MessageBox.Action.OK) { return; }
 
-      try { localStorage.removeItem("login_email"); } catch (e) {}
+      // Clear light client-side state
+      try { sessionStorage.clear(); } catch (e) {}
+      try { localStorage.clear(); } catch (e) {}
 
-      const oODataModel = this.getOwnerComponent().getModel("");
-      if (oODataModel?.refresh) oODataModel.refresh();
+      // FLP home navigation (no await; don’t throw)
+      if (sap.ushell && sap.ushell.Container) {
+        try {
+          // To FLP Home:
+          window.location.hash = "#Shell-home";
+          return;
+        } catch (e) {
+          // fall through to hard redirect
+        }
+      }
 
-      this.getOwnerComponent().getRouter().navTo("Login", {}, true);
-    },
+      // Fallback if not in FLP
+      var oComp = that.getOwnerComponent && that.getOwnerComponent();
+      var oRouter = oComp && oComp.getRouter && oComp.getRouter();
+      if (oRouter && oRouter.navTo) {
+        oRouter.navTo("Login", {}, true);
+        return;
+      }
+      window.location.replace("/login");
+    }
+  });
+},
 
     formatBalanceState: function (v) {
       const n = Number(v);

@@ -101,8 +101,9 @@
           <items>
             <ColumnListItem type="Active" press=".onRowPress">
               <cells>
-                <!-- EMPLOYEE NAME - Uses lookup map formatter -->
-                <Text text="{path: 'employee_employeeId', formatter: '.formatEmployeeName'}" /> 
+                <!-- EMPLOYEE NAME - Direct binding to empname -->
+                <Text text="{empname}"/> 
+                
                 <!-- LEAVE TYPE DESCRIPTION -->
                 <Text text="{ path: 'leaveType_code', formatter: '.formatLeaveTypeDesc' }"/>
 
@@ -144,8 +145,8 @@
         <!-- Details Popover -->
         <ResponsivePopover id="popDetails" placement="Auto" title="Leave Request Details">
           <VBox class="sapUiSmallMargin" width="400px">
-            <ObjectAttribute title="Employee Name"
-              text="{ path: 'employee_employeeId', formatter: '.formatEmployeeFullName' }"/>
+            <!-- Employee Name - Direct binding -->
+            <ObjectAttribute title="Employee Name" text="{empname}"/>
             <ObjectAttribute title="Leave Type"
               text="{ path: 'leaveType_code', formatter: '.formatLeaveTypeFullDesc' }"/>
             <ObjectAttribute title="Period"

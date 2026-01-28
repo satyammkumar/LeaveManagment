@@ -151,12 +151,6 @@ sap.ui.define(
           return;
         }
 
-        // Manager ID: Make optional for first user
-        // if (!oData.managerId?.trim()) {
-        //   this._showError(oMsg, "Please enter Manager ID");
-        //   return;
-        // }
-
         if (!oData.password?.trim()) {
           this._showError(oMsg, "Please enter password");
           return;

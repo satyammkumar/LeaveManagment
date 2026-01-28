@@ -1,22 +1,22 @@
-// srv/schemaDB-service.js
 const cds = require("@sap/cds");
 const bcrypt = require("bcryptjs");
 
 module.exports = cds.service.impl(async function () {
   const { Employees, LeaveRequests, LeaveBalances, LeaveTypes, Approvals } = this.entities;
 
-  // ---------- Utilities ----------
+  // UTILITY FUNCTIONS 
   function toMidnight(d) {
     const x = new Date(d);
     x.setHours(0, 0, 0, 0);
     return x;
   }
+
   function isWeekend(d) {
     const day = d.getDay(); // 0=Sun, 6=Sat
     return day === 0 || day === 6;
   }
+
   function businessDaysInclusive(start, end) {
-    // Count only Mon–Fri inclusive
     const s = toMidnight(start);
     const e = toMidnight(end);
     if (e < s) return 0;
@@ -35,7 +35,7 @@ module.exports = cds.service.impl(async function () {
       SELECT.one.from(LeaveBalances).where({ employee_employeeId, leaveType_code })
     );
     const accrued = Number(row?.accruedDays || 0);
-    const used    = Number(row?.usedDays || 0);
+    const used = Number(row?.usedDays || 0);
     return accrued - used;
   }
 
@@ -44,18 +44,48 @@ module.exports = cds.service.impl(async function () {
       SELECT.from(LeaveRequests).where({
         employee_employeeId,
         startDate: { "<=": endDate },
-        endDate:   { ">=": startDate },
-        status:    { "not in": ["Rejected", "Cancelled"] }
+        endDate: { ">=": startDate },
+        status: { "not in": ["Rejected", "Cancelled"] }
       })
     );
     return overlaps.length > 0;
   }
 
-  // ---------- Hooks on LeaveRequests ----------
+    // Get employee full name from employeeId
+  async function getEmployeeName(tx, employeeId) {
+    if (!employeeId) return "";
+
+    try {
+      const employee = await tx.run(
+        SELECT.one.from(Employees)
+          .columns("firstName", "lastName", "email")
+          .where({ employeeId })
+      );
+
+      if (!employee) return employeeId;
+
+      const fullName = [employee.firstName, employee.lastName]
+        .filter(Boolean)
+        .join(' ')
+        .trim();
+
+      return fullName || employee.email || employeeId;
+    } catch (error) {
+      console.error(`Error fetching employee name for ${employeeId}:`, error);
+      return employeeId;
+    }
+  }
+
+  // HOOKS ON LEAVE REQUESTS 
+
+  
+  //  BEFORE CREATE: Validate and set empname
+  
   this.before("CREATE", LeaveRequests, async (req) => {
     const tx = cds.transaction(req);
     const { employee_employeeId, leaveType_code, startDate, endDate } = req.data;
 
+    // Validation
     if (!employee_employeeId || !leaveType_code || !startDate || !endDate) {
       req.reject(400, "Missing required fields (employee, leave type, startDate, endDate).");
     }
@@ -85,12 +115,20 @@ module.exports = cds.service.impl(async function () {
       req.reject(400, "Overlapping leave request exists.");
     }
 
+    // Set calculated fields
     req.data.daysRequested = daysRequested;
     req.data.submittedAt = new Date();
     if (!req.data.status) req.data.status = "Pending";
+
+    // SET EMPLOYEE NAME
+    if (!req.data.empname) {
+      req.data.empname = await getEmployeeName(tx, employee_employeeId);
+    }
   });
 
-  this.after("CREATE", LeaveRequests, async (data /*, req */) => {
+    // AFTER CREATE: Update leave balance if approved
+
+  this.after("CREATE", LeaveRequests, async (data) => {
     if (!data) return;
     if (data.status === "Approved") {
       await UPDATE(LeaveBalances)
@@ -102,37 +140,65 @@ module.exports = cds.service.impl(async function () {
     }
   });
 
-  // -------------------- Actions --------------------
+  
+    // AFTER READ: Ensure empname is populated for all requests
+   
+  this.after("READ", LeaveRequests, async (results, req) => {
+    const tx = cds.transaction(req);
+    const rows = Array.isArray(results) ? results : (results ? [results] : []);
 
-  /** Submit Leave Request */
+    for (const row of rows) {
+      if (row && row.employee_employeeId) {
+        // If empname is missing or equals employee ID, fetch the name
+        if (!row.empname || row.empname === row.employee_employeeId) {
+          row.empname = await getEmployeeName(tx, row.employee_employeeId);
+        }
+      }
+    }
+  });
+
+  
+  //  COMPUTED FIELD: LeaveBalances - calculate balance
+  
+  this.after("READ", LeaveBalances, (rows) => {
+    const arr = Array.isArray(rows) ? rows : (rows ? [rows] : []);
+    for (const each of arr) {
+      const accrued = Number(each.accruedDays || 0);
+      const used = Number(each.usedDays || 0);
+      each.balance = accrued - used;
+    }
+  });
+
+
+
+  // ACTION: submitLeaveRequest
   this.on("submitLeaveRequest", async (req) => {
     const tx = cds.transaction(req);
     const { employeeId, leaveTypeCode, startDate, endDate, reason } = req.data;
 
-    // 1) Fetch employee
+    // Fetch employee
     const employee = await tx.run(SELECT.one.from(Employees).where({ employeeId }));
     if (!employee) req.reject(400, "Invalid employee.");
 
-    // Name fallback
-    const empName = [employee.firstName, employee.lastName].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
-    const finalEmpName = empName || employee.email || employee.employeeId;
+    // Get employee name
+    const empName = await getEmployeeName(tx, employeeId);
 
-    // 2) Validate leave type
+    // Validate leave type
     const leaveType = await tx.run(SELECT.one.from(LeaveTypes).where({ code: leaveTypeCode }));
     if (!leaveType) req.reject(400, "Invalid leave type.");
 
-    // 4) Prepare entry
+    // Prepare entry
     const entry = {
       employee_employeeId: employeeId,
-      leaveType_code:      leaveTypeCode,
+      leaveType_code: leaveTypeCode,
       startDate,
       endDate,
       reason: (reason || "").trim(),
       status: "Pending",
-      empname: finalEmpName,
+      empname: empName,
     };
 
-    // 5) Insert with robust fallback
+    // Insert with fallback
     let created;
     try {
       const res = await tx.run(INSERT.into(LeaveRequests).entries(entry).returning("*"));
@@ -143,25 +209,25 @@ module.exports = cds.service.impl(async function () {
       created = createdId
         ? await tx.run(SELECT.one.from(LeaveRequests).where({ ID: createdId }))
         : await tx.run(
-            SELECT.one.from(LeaveRequests)
-              .where({
-                employee_employeeId: employeeId,
-                leaveType_code: leaveTypeCode,
-                startDate,
-                endDate
-              })
-              .orderBy({ submittedAt: "desc" })
-          );
+          SELECT.one.from(LeaveRequests)
+            .where({
+              employee_employeeId: employeeId,
+              leaveType_code: leaveTypeCode,
+              startDate,
+              endDate
+            })
+            .orderBy({ submittedAt: "desc" })
+        );
     }
 
     if (created) {
-      created.empName = finalEmpName;
+      created.empName = empName;
     }
 
     return created;
   });
 
-  /** Approve Leave Request */
+  // Approve a pending leave request
   this.on("approveLeaveRequest", async (req) => {
     const tx = cds.transaction(req);
     const { requestId, approverId, comments } = req.data;
@@ -196,7 +262,7 @@ module.exports = cds.service.impl(async function () {
     return await tx.run(SELECT.one.from(LeaveRequests).where({ ID: requestId }));
   });
 
-  /** Reject Leave Request */
+  //  ACTION: rejectLeaveRequest
   this.on("rejectLeaveRequest", async (req) => {
     const tx = cds.transaction(req);
     const { requestId, approverId, comments } = req.data;
@@ -221,7 +287,7 @@ module.exports = cds.service.impl(async function () {
     return await tx.run(SELECT.one.from(LeaveRequests).where({ ID: requestId }));
   });
 
-  /** (Optional) Cancel Leave Request */
+    // ACTION: cancelLeaveRequest
   this.on("cancelLeaveRequest", async (req) => {
     const tx = cds.transaction(req);
     const { requestId, cancellerId, comments } = req.data;
@@ -255,17 +321,10 @@ module.exports = cds.service.impl(async function () {
     return await tx.run(SELECT.one.from(LeaveRequests).where({ ID: requestId }));
   });
 
-  // ---------- COMPUTED FIELDS ----------
-  this.after("READ", LeaveBalances, (rows) => {
-    const arr = Array.isArray(rows) ? rows : (rows ? [rows] : []);
-    for (const each of arr) {
-      const accrued = Number(each.accruedDays || 0);
-      const used    = Number(each.usedDays || 0);
-      each.balance  = accrued - used;
-    }
-  });
-
-  // ==================== LOGIN ====================
+  /**
+   * ACTION: login
+   * Authenticate user and return employee data
+   */
   this.on("login", async (req) => {
     const tx = cds.transaction(req);
     const { email, password } = req.data;
@@ -290,8 +349,8 @@ module.exports = cds.service.impl(async function () {
         employee: {
           employeeID: String(emp.employeeId),
           firstName: emp.firstName || "",
-          lastName:  emp.lastName  || "",
-          email:     emp.email     || "",
+          lastName: emp.lastName || "",
+          email: emp.email || "",
           department: emp.department || "",
           designation
         }
@@ -302,14 +361,138 @@ module.exports = cds.service.impl(async function () {
     }
   });
 
-  // ==================== REGISTER (placeholder) ====================
-  this.on("register", async (req) => {
-    // Your existing implementation here...
-    return { success: false, message: "Not implemented", employeeId: "" };
-  });
+ 
+ 
+    // Register a new employee - HANA Compatible with Optional Manager
+this.on('register', async (req) => {
+  const { firstName, lastName, email, password, managerId } = req.data;
 
-  // ---------- GET EMPLOYEE DATA ----------
-  this.on("getEmployeeData", async (req) => {
+  console.log('[register] Request received:', { firstName, lastName, email });
+
+  // Basic Validation 
+  if (!firstName || !lastName || !email || !password) {
+    console.log('[register] Missing required fields');
+    return req.reject(400, 'Missing required fields');
+  }
+
+  if (password.length < 6) {
+    console.log('[register] Password too short');
+    return req.reject(400, 'Password must be at least 6 characters');
+  }
+
+  const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailPattern.test(email)) {
+    console.log('[register] Invalid email format');
+    return req.reject(400, 'Invalid email address');
+  }
+
+  const tx = cds.transaction(req);
+
+  try {
+    // Check if email already exists 
+    const existingEmp = await tx.run(
+      SELECT.one.from(Employees).where({ email })
+    );
+
+    if (existingEmp) {
+      console.log('[register] Email already registered:', email);
+      return req.reject(409, 'User with this email already exists');
+    }
+
+    // Auto-generate Employee ID 
+    console.log('[register] Generating next employee ID...');
+    const lastEmployee = await tx.run(
+      SELECT.one.from(Employees).orderBy({ employeeId: 'desc' })
+    );
+
+    let employeeId = 'E1001';
+    if (lastEmployee && lastEmployee.employeeId) {
+      const currentId = lastEmployee.employeeId; 
+      const numericPart = parseInt(currentId.replace(/[^0-9]/g, ''), 10);
+      if (!isNaN(numericPart)) {
+        // Keep same padding length as currentId minus the leading 'E'
+        employeeId = 'E' + String(numericPart + 1).padStart(currentId.length - 1, '0');
+      }
+    }
+    console.log('[register] Generated employee ID:', employeeId);
+
+    // Hash password 
+    console.log('[register] Hashing password...');
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // Create Employee 
+    console.log('[register] Creating employee...');
+    await tx.run(
+      INSERT.into(Employees).entries({
+        employeeId,
+        firstName,
+        lastName,
+        email,
+        department: 'General',
+        password: hashedPassword,
+        managerId: managerId || null
+      })
+    );
+
+    console.log('[register] Employee created');
+
+    const employee = await tx.run(
+      SELECT.one.from(Employees).where({ email })
+    );
+
+    console.log(employee, "empcheck");
+
+    if (!employee) {
+      console.log('[register] Failed to retrieve created employee');
+      return req.reject(500, 'Failed to create employee');
+    }
+
+    // Initialize LeaveBalances for all LeaveTypes 
+    try {
+      const leaveTypes = await tx.run(SELECT.from(LeaveTypes));
+      if (leaveTypes && leaveTypes.length > 0) {
+        console.log('[register] Initializing leave balances for', leaveTypes.length, 'types');
+
+        const balanceEntries = leaveTypes.map(lt => ({
+          employee_ID: employee.ID,
+          leaveType_ID: lt.ID,
+          accruedDays: 0,
+          usedDays: 0,
+          balance: 0 
+        }));
+
+        await tx.run(INSERT.into(LeaveBalances).entries(balanceEntries));
+        console.log('[register] LeaveBalances initialized');
+      }
+    } catch (e) {
+      console.warn('[register] Leave balance initialization failed:', e.message);
+    }
+
+    await tx.commit();
+    console.log('[register] Registration complete for:', email);
+
+    return {
+      success: true,
+      message: 'Registered successfully. Please log in.',
+      employeeId: employeeId,
+      employee: {
+        employeeID: String(employee.employeeId),
+        firstName: employee.firstName,
+        lastName: employee.lastName,
+        email: employee.email
+      }
+    };
+
+  } catch (e) {
+    console.error('[register] Error:', e);
+    await tx.rollback();
+    return req.reject(500, e.message || 'Registration failed');
+  }
+});
+
+  
+    // ACTION: getEmployeeData
+     this.on("getEmployeeData", async (req) => {
     const tx = cds.transaction(req);
     const { email } = req.data;
     if (!email) return { success: false, message: "Email is required" };
@@ -336,13 +519,13 @@ module.exports = cds.service.impl(async function () {
         success: true,
         message: "Employee data retrieved successfully",
         employee: {
-          id:         String(employee.employeeId),
+          id: String(employee.employeeId),
           employeeID: String(employee.employeeId),
-          firstName:  employee.firstName,
-          lastName:   employee.lastName,
-          email:      employee.email,
+          firstName: employee.firstName,
+          lastName: employee.lastName,
+          email: employee.email,
           department: employee.department,
-          managerID:  employee.managerId || ""
+          managerID: employee.managerId || ""
         },
         leaveBalances
       };
@@ -353,5 +536,146 @@ module.exports = cds.service.impl(async function () {
   });
 
   
+   
+    // Get leave balance for an employee
+   
+  this.on("getEmployeeLeaveBalance", async (req) => {
+    const tx = cds.transaction(req);
+    const { employeeID } = req.data;
+
+    if (!employeeID) {
+      return {
+        success: false,
+        message: "Employee ID is required",
+        balances: [],
+        count: 0
+      };
+    }
+
+    try {
+      const balances = await tx.run(
+        SELECT.from(LeaveBalances)
+          .where({ employee_employeeId: employeeID })
+      );
+
+      // Get leave type descriptions
+      const leaveTypes = await tx.run(SELECT.from(LeaveTypes));
+      const leaveTypeMap = {};
+      (leaveTypes || []).forEach(lt => {
+        leaveTypeMap[lt.code] = lt.description || lt.code;
+      });
+
+      const formattedBalances = (balances || []).map(b => ({
+        id: String(b.ID),
+        leaveType: leaveTypeMap[b.leaveType_code] || b.leaveType_code,
+        accruedDays: Number(b.accruedDays || 0),
+        usedDays: Number(b.usedDays || 0),
+        balance: Number(b.accruedDays || 0) - Number(b.usedDays || 0)
+      }));
+
+      return {
+        success: true,
+        message: `Retrieved ${formattedBalances.length} balance(s)`,
+        balances: formattedBalances,
+        count: formattedBalances.length
+      };
+    } catch (error) {
+      console.error("getEmployeeLeaveBalance error:", error);
+      return {
+        success: false,
+        message: "An error occurred retrieving leave balances",
+        balances: [],
+        count: 0
+      };
+    }
+  });
+
+  
+   // Get all leave requests for a specific employee
+  this.on("leaveRequests", async (req) => {
+    const tx = cds.transaction(req);
+    const { employeeID } = req.data;
+
+    if (!employeeID) {
+      return {
+        success: false,
+        message: "Employee ID is required",
+        requests: [],
+        count: 0
+      };
+    }
+
+    try {
+      // Fetch all leave requests for this employee
+      const requests = await tx.run(
+        SELECT.from(LeaveRequests)
+          .columns(
+            "ID",
+            "empname",
+            "employee_employeeId",
+            "leaveType_code",
+            "startDate",
+            "endDate",
+            "daysRequested",
+            "reason",
+            "status",
+            "submittedAt",
+            "approvedBy",
+            "approvedAt"
+          )
+          .where({ employee_employeeId: employeeID })
+          .orderBy({ submittedAt: "desc" })
+      );
+
+      // Fetch leave type descriptions
+      const leaveTypes = await tx.run(SELECT.from(LeaveTypes).columns("code", "description"));
+      const leaveTypeMap = {};
+      (leaveTypes || []).forEach(lt => {
+        leaveTypeMap[lt.code] = lt.description || lt.code;
+      });
+
+      // Format responses and ensure empname is populated
+      const formattedRequests = [];
+      for (const req of requests || []) {
+        let empname = req.empname;
+
+        // If empname is missing or equals employee ID, fetch it
+        if (!empname || empname === req.employee_employeeId) {
+          empname = await getEmployeeName(tx, req.employee_employeeId);
+        }
+
+        formattedRequests.push({
+          id: String(req.ID),
+          empname: empname,
+          employeeId: req.employee_employeeId || "",
+          leaveType: leaveTypeMap[req.leaveType_code] || req.leaveType_code,
+          leaveTypeCode: req.leaveType_code,
+          startDate: req.startDate,
+          endDate: req.endDate,
+          daysRequested: Number(req.daysRequested || 0),
+          reason: req.reason || "",
+          status: req.status || "Pending",
+          submittedAt: req.submittedAt,
+          approvedBy: req.approvedBy || "",
+          approvedAt: req.approvedAt || null
+        });
+      }
+
+      return {
+        success: true,
+        message: `Retrieved ${formattedRequests.length} leave request(s)`,
+        requests: formattedRequests,
+        count: formattedRequests.length
+      };
+    } catch (error) {
+      console.error("leaveRequests error:", error);
+      return {
+        success: false,
+        message: "An error occurred retrieving leave requests",
+        requests: [],
+        count: 0
+      };
+    }
+  });
 
 });

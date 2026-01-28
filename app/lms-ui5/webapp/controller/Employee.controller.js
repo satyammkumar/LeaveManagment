@@ -1,4 +1,3 @@
-
 sap.ui.define([
   "sap/ui/core/mvc/Controller",
   "sap/ui/model/Filter",
@@ -6,8 +5,9 @@ sap.ui.define([
   "sap/ui/model/json/JSONModel",
   "sap/m/MessageToast",
   "sap/m/MessageBox",
-  "sap/ui/core/Fragment"
-], function (Controller, Filter, FilterOperator, JSONModel, MessageToast, MessageBox, Fragment) {
+  "sap/ui/core/Fragment",
+  "sap/ui/core/format/DateFormat"
+], function (Controller, Filter, FilterOperator, JSONModel, MessageToast, MessageBox, Fragment, DateFormat) {
   "use strict";
 
   return Controller.extend("lmsui5.controller.Employee", {
@@ -21,6 +21,12 @@ sap.ui.define([
       // Transient model for Apply Leave
       this.getView().setModel(new JSONModel(this._buildApplyLeaveModelData()), "applyLeave");
 
+      // ✅ NEW: Model for leave requests
+      this.getView().setModel(new JSONModel({
+        requests: [],
+        counts: { total: 0, pending: 0, approved: 0, rejected: 0 }
+      }), "leaveRequests");
+
       // Route → load employee data when navigated with { username } (email)
       const oRouter = this.getOwnerComponent().getRouter();
       oRouter.getRoute("Employee").attachPatternMatched(this._onRouteMatched, this);
@@ -29,20 +35,23 @@ sap.ui.define([
       this.getView().addEventDelegate({
         onAfterShow: function () {
           this._applyEmployeeFilter();
-          this._refreshOwnLeaveData(); // 🔄 keep page up to date when user returns
+          this._refreshOwnLeaveData();
         }.bind(this)
       });
 
-      // 🔔 Subscribe to leave change events (submitted/approved/rejected/cancelled)
+      // 🔔 Subscribe to leave change events
       this._bus = sap.ui.getCore().getEventBus();
       this._bus.subscribe("leave", "changed", this._onLeaveChanged, this);
     },
 
     onExit: function () {
-      // Clean up dialog and event subscriptions
       if (this._pApplyLeaveDlg) {
         this._pApplyLeaveDlg.then(function (oDialog) { oDialog.destroy(); });
         this._pApplyLeaveDlg = null;
+      }
+      if (this._pRequestDetailsDlg) {
+        this._pRequestDetailsDlg.then(function (oDialog) { oDialog.destroy(); });
+        this._pRequestDetailsDlg = null;
       }
       if (this._bus) {
         this._bus.unsubscribe("leave", "changed", this._onLeaveChanged, this);
@@ -97,6 +106,9 @@ sap.ui.define([
 
         MessageToast.show("Employee data loaded successfully");
         this._applyEmployeeFilter();
+
+        // ✅ NEW: Load leave requests after employee data is loaded
+        this._loadMyLeaveRequests();
 
       } catch (err) {
         this._showError(err.message || "Failed to load employee data");
@@ -188,44 +200,39 @@ sap.ui.define([
         oBinding.refresh();
         MessageToast.show("Data refreshed");
       }
+      this._loadMyLeaveRequests();
     },
 
     /** Logout */
-onLogout: function () {
-  var that = this;
+    onLogout: function () {
+      var that = this;
 
-  sap.m.MessageBox.confirm("Are you sure you want to logout?", {
-    actions: [sap.m.MessageBox.Action.OK, sap.m.MessageBox.Action.CANCEL],
-    emphasizedAction: sap.m.MessageBox.Action.OK,
-    onClose: function (sAction) {
-      if (sAction !== sap.m.MessageBox.Action.OK) { return; }
+      sap.m.MessageBox.confirm("Are you sure you want to logout?", {
+        actions: [sap.m.MessageBox.Action.OK, sap.m.MessageBox.Action.CANCEL],
+        emphasizedAction: sap.m.MessageBox.Action.OK,
+        onClose: function (sAction) {
+          if (sAction !== sap.m.MessageBox.Action.OK) { return; }
 
-      // Clear light client-side state
-      try { sessionStorage.clear(); } catch (e) {}
-      try { localStorage.clear(); } catch (e) {}
+          try { sessionStorage.clear(); } catch (e) {}
+          try { localStorage.clear(); } catch (e) {}
 
-      // FLP home navigation (no await; don’t throw)
-      if (sap.ushell && sap.ushell.Container) {
-        try {
-          // To FLP Home:
-          window.location.hash = "#Shell-home";
-          return;
-        } catch (e) {
-          // fall through to hard redirect
+          if (sap.ushell && sap.ushell.Container) {
+            try {
+              window.location.hash = "#Shell-home";
+              return;
+            } catch (e) {}
+          }
+
+          var oComp = that.getOwnerComponent && that.getOwnerComponent();
+          var oRouter = oComp && oComp.getRouter && oComp.getRouter();
+          if (oRouter && oRouter.navTo) {
+            oRouter.navTo("Login", {}, true);
+            return;
+          }
+          window.location.replace("/login");
         }
-      }
-
-      // Fallback if not in FLP
-      var oComp = that.getOwnerComponent && that.getOwnerComponent();
-      var oRouter = oComp && oComp.getRouter && oComp.getRouter();
-      if (oRouter && oRouter.navTo) {
-        oRouter.navTo("Login", {}, true);
-        return;
-      }
-      window.location.replace("/login");
-    }
-  });
-},
+      });
+    },
 
     formatBalanceState: function (v) {
       const n = Number(v);
@@ -233,6 +240,149 @@ onLogout: function () {
       if (n < 0) return "Error";
       if (n === 0) return "Warning";
       return "Success";
+    },
+
+    // ✅ NEW: Format status to semantic state
+    formatStatusState: function (s) {
+      switch ((s || "").toLowerCase()) {
+        case "pending": return "Warning";
+        case "approved": return "Success";
+        case "rejected": return "Error";
+        case "cancelled": return "None";
+        default: return "None";
+      }
+    },
+
+    // ✅ NEW: Format date range
+    formatDateRange: function (sStart, sEnd) {
+      if (!sStart && !sEnd) return "";
+      try {
+        const fmt = DateFormat.getDateInstance({ style: "medium" });
+        const a = sStart ? fmt.format(new Date(sStart)) : "";
+        const b = sEnd ? fmt.format(new Date(sEnd)) : "";
+        return a && b ? `${a} → ${b}` : (a || b);
+      } catch (e) {
+        return `${sStart || ""} → ${sEnd || ""}`;
+      }
+    },
+
+    // ✅ NEW: Format datetime
+    formatDateTime: function (sDateTime) {
+      if (!sDateTime) return "";
+      try {
+        const fmt = DateFormat.getDateTimeInstance({ style: "medium" });
+        return fmt.format(new Date(sDateTime));
+      } catch (e) {
+        return sDateTime;
+      }
+    },
+
+    // ✅ NEW: Load my leave requests
+    _loadMyLeaveRequests: async function () {
+      const oUserModel = this.getOwnerComponent().getModel("user");
+      const sEmployeeId = oUserModel?.getProperty("/employeeId");
+
+      if (!sEmployeeId) return;
+
+      try {
+        const res = await fetch("/odata/v4/my-services/leaveRequests", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ employeeID: sEmployeeId })
+        });
+
+        if (!res.ok) {
+          throw new Error("Failed to load leave requests");
+        }
+
+        const data = await res.json();
+        const requests = data.requests || [];
+
+        // Calculate counts
+        const counts = {
+          total: requests.length,
+          pending: requests.filter(r => r.status === "Pending").length,
+          approved: requests.filter(r => r.status === "Approved").length,
+          rejected: requests.filter(r => r.status === "Rejected").length
+        };
+
+        const oRequestsModel = this.getView().getModel("leaveRequests");
+        oRequestsModel.setProperty("/requests", requests);
+        oRequestsModel.setProperty("/counts", counts);
+
+        // ✅ NEW: Check for new rejections and show notifications
+        this._checkForRejectionNotifications(requests);
+
+      } catch (err) {
+        console.error("Failed to load leave requests:", err);
+      }
+    },
+
+    // ✅ NEW: Check for new rejection notifications
+    _checkForRejectionNotifications: function (requests) {
+      const rejectedRequests = requests.filter(r => 
+        r.status === "Rejected" && r.managerComments
+      );
+
+      if (rejectedRequests.length > 0) {
+        // Show the first rejection (or you can show all)
+        const latestRejection = rejectedRequests[0];
+        
+        MessageBox.warning(
+          latestRejection.managerComments || "No reason provided by manager",
+          {
+            title: "Leave Request Rejected",
+            details: `Leave Type: ${latestRejection.leaveType}\nPeriod: ${this.formatDateRange(latestRejection.startDate, latestRejection.endDate)}\nDays: ${latestRejection.daysRequested}`,
+            actions: [MessageBox.Action.OK, "View All Requests"],
+            emphasizedAction: MessageBox.Action.OK,
+            onClose: (sAction) => {
+              if (sAction === "View All Requests") {
+                // Scroll to requests table or open a dialog
+                const oRequestsTable = this.byId("myRequestsTable");
+                if (oRequestsTable) {
+                  oRequestsTable.getDomRef()?.scrollIntoView({ behavior: "smooth" });
+                }
+              }
+            }
+          }
+        );
+      }
+    },
+
+    // ✅ NEW: View request details (including manager comments)
+    onViewRequestDetails: function (oEvent) {
+      const ctx = oEvent.getSource().getBindingContext("leaveRequests");
+      const oData = ctx.getObject();
+
+      if (!oData) return;
+
+      const sFragId = this.getView().getId() + "--requestDetailsFrag";
+
+      if (!this._pRequestDetailsDlg) {
+        this._pRequestDetailsDlg = Fragment.load({
+          name: "lmsui5.view.fragments.RequestDetails",
+          controller: this,
+          id: sFragId
+        }).then(function (oDialog) {
+          this.getView().addDependent(oDialog);
+          return oDialog;
+        }.bind(this));
+      }
+
+      this._pRequestDetailsDlg.then(function (oDialog) {
+        oDialog.setBindingContext(ctx, "leaveRequests");
+        oDialog.open();
+      });
+    },
+
+    // ✅ NEW: Close request details dialog
+    onCloseRequestDetails: function () {
+      const sFragId = this.getView().getId() + "--requestDetailsFrag";
+      if (this._pRequestDetailsDlg) {
+        this._pRequestDetailsDlg.then(function (oDialog) {
+          oDialog.close();
+        });
+      }
     },
 
     // ========= Apply Leave Dialog =========
@@ -252,7 +402,7 @@ onLogout: function () {
           return oDialog;
         }.bind(this)).catch(function (e) {
           console.error("Fragment load failed:", e);
-          MessageBox.error("Failed to load Apply Leave dialog. Check fragment path or manifest libs.");
+          MessageBox.error("Failed to load Apply Leave dialog.");
         });
       }
 
@@ -283,7 +433,7 @@ onLogout: function () {
     onCalendarSelect: function (oEvent) {
       const oCalendar = oEvent.getSource();
       const aRanges = oCalendar.getSelectedDates() || [];
-      const oRange = aRanges[0];  // single interval only
+      const oRange = aRanges[0];
       const oModel = this.getView().getModel("applyLeave");
 
       if (oRange) {
@@ -334,23 +484,20 @@ onLogout: function () {
       }
 
       try {
-        // --- OData V4 action call ---
         const oModel = this.getView().getModel();
         const oCtx = oModel.bindContext("/submitLeaveRequest(...)");
         oCtx.setParameter("employeeId",    sEmployeeId);
         oCtx.setParameter("leaveTypeCode", sLeaveType);
-        oCtx.setParameter("startDate",     sStart);  // 'YYYY-MM-DD'
-        oCtx.setParameter("endDate",       sEnd);    // 'YYYY-MM-DD'
+        oCtx.setParameter("startDate",     sStart);
+        oCtx.setParameter("endDate",       sEnd);
         oCtx.setParameter("reason",        sReason);
         await oCtx.execute();
 
         MessageToast.show("Leave application submitted.");
         this.onCancelApplyLeave();
 
-        // 🔄 Immediately refresh my view (OData table + JSON summary)
         await this._refreshOwnLeaveData();
 
-        // 🔔 Notify other views (e.g., Manager) & other tabs
         sap.ui.getCore().getEventBus().publish("leave", "changed", {
           employeeId: sEmployeeId,
           source: "employee",
@@ -434,7 +581,7 @@ onLogout: function () {
     },
 
     _isWeekend: function (dateObj) {
-      const day = dateObj.getDay(); // 0=Sun, 6=Sat
+      const day = dateObj.getDay();
       return day === 0 || day === 6;
     },
 
@@ -453,11 +600,12 @@ onLogout: function () {
 
     /** 🔁 Centralized self-refresh after any change for this employee */
     _refreshOwnLeaveData: async function () {
-      // 1) Refresh the OData LeaveBalances table binding (keeps filters applied)
       const balBinding = this.byId("balancesTable")?.getBinding("items");
       balBinding?.refresh();
 
-      // 2) Refresh the top “Leave Summary” in the local JSON 'user' model
+      // ✅ UPDATED: Also refresh leave requests
+      await this._loadMyLeaveRequests();
+
       try {
         const username = this.getOwnerComponent().getModel("auth")?.getProperty("/username");
         if (username) {
@@ -470,14 +618,12 @@ onLogout: function () {
             const data = await res.json();
             const oUserModel = this.getOwnerComponent().getModel("user");
             if (oUserModel && data.employee) {
-              // Only update balances to keep other user info intact
               oUserModel.setProperty("/leaveBalances", data.leaveBalances || []);
             }
           }
         }
       } catch (e) {
-        // It's okay if this fails; OData table is still refreshed
-        // console.warn("Failed to reload getEmployeeData:", e);
+        // Silent fail
       }
     },
 
@@ -488,10 +634,9 @@ onLogout: function () {
         if (!myEmpId) return;
 
         if (oData && oData.employeeId && oData.employeeId !== myEmpId) {
-          return; // event for another employee, ignore
+          return;
         }
 
-        // Same employee → refresh my view
         this._refreshOwnLeaveData();
       } catch (e) {
         // no-op

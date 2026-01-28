@@ -22,14 +22,14 @@
 
         <!-- KPIs -->
         <HBox width="100%" class="sapUiSmallMarginTop" wrap="Wrap" renderType="Bare">
-          <ObjectStatus id="kpiPending"  title="Pending"         text="{view>/kpi/pending}"       state="Warning" class="sapUiSmallMarginEnd"/>
-          <ObjectStatus id="kpiApproved" title="Approved Today"  text="{view>/kpi/approvedToday}" state="Success" class="sapUiSmallMarginEnd"/>
+          <ObjectStatus id="kpiPending"  title="Pending"         text="{view>/kpi/pending}"       state="Warning" class="sapUitinyMarginEnd"/>
+          <ObjectStatus id="kpiApproved" title="Approved Today"  text="{view>/kpi/approvedToday}" state="Success" class="sapUitinyMarginEnd"/>
           <ObjectStatus id="kpiRejected" title="Rejected Today"  text="{view>/kpi/rejectedToday}" state="Error"/>
         </HBox>
 
         <!-- Filter Bar -->
         <Toolbar class="sapUiMediumMarginTop">
-          <Select id="selStatus" width="10rem" change=".onStatusChange">
+          <Select id="selStatus" width="5rem" change=".onStatusChange">
             <items>
               <core:Item key="Pending"  text="Pending"/>
               <core:Item key="Approved" text="Approved"/>
@@ -94,7 +94,7 @@
             <Column width="16rem"><Text text="Period"/></Column>
             <Column width="8rem"  hAlign="End"><Text text="Days"/></Column>
             <Column width="18rem"><Text text="Reason"/></Column>
-            <Column width="12rem"><Text text="Status"/></Column>
+            <Column width="5rem"><Text text="Status"/></Column>
             <Column width="16rem" hAlign="End"><Text text="Actions"/></Column>
           </columns>
 

@@ -12,19 +12,18 @@
       <VBox class="sapUiMediumMargin">
 
         <!-- Greeting -->
- 
-    <HBox width="100%" justifyContent="SpaceBetween" alignItems="Center">
-    <Title text="Welcome, {user>/fullName}" level="H2"/>
-    <!-- <Button text="Logout" icon="sap-icon://log" press=".onLogout"/> -->
-    <HBox width="100%" justifyContent="End" alignItems="Center">
+        <HBox width="100%" justifyContent="SpaceBetween" alignItems="Center">
+          <Title text="Welcome, {user>/fullName}" level="H2"/>
+          <HBox width="100%" justifyContent="End" alignItems="Center">
             <Button 
               text="Logout" 
               icon="sap-icon://log" 
               press=".onLogout" 
               class="lightRedButton"/>
           </HBox>
-  </HBox>
-    <HBox justifyContent="End" width="100%" class="sapUiTinyMarginTop">
+        </HBox>
+
+        <HBox justifyContent="End" width="100%" class="sapUiTinyMarginTop">
           <Button
             id="btnApplyLeave"
             text="Apply Leave"
@@ -33,9 +32,7 @@
             press=".onOpenApplyLeave"/>
         </HBox>
 
-
-
-           <Toolbar class="sapUiMediumMarginTop">
+        <Toolbar class="sapUiMediumMarginTop">
           <SearchField id="sf" placeholder="Search by leave type code or description"
                        width="20rem" search=".onSearch" liveChange=".onLiveChange"/>
           <ToolbarSpacer/>
@@ -51,12 +48,10 @@
           class="sapUiMediumMarginTop">
 
           <headerToolbar>
-          
             <Toolbar>
               <Title text="Leave Summary"/>
               <ToolbarSpacer/>
               <Text text="(Employee ID: {user>/employeeId})"/>
-
             </Toolbar>
           </headerToolbar>
 
@@ -81,10 +76,55 @@
           </items>
         </Table>
 
-        <!-- Actions -->
-    
+        <!-- ✅ NEW: My Leave Requests Table -->
+        <Table
+          id="myRequestsTable"
+          inset="false"
+          items="{leaveRequests>/requests}"
+          class="sapUiMediumMarginTop">
 
-        <!-- Leave Balance Table from OData -->
+          <headerToolbar>
+            <Toolbar>
+              <Title text="My Leave Requests"/>
+              <ToolbarSpacer/>
+              <ObjectStatus text="{leaveRequests>/counts/pending}" title="Pending" state="Warning" class="sapUiSmallMarginEnd"/>
+              <ObjectStatus text="{leaveRequests>/counts/approved}" title="Approved" state="Success" class="sapUiSmallMarginEnd"/>
+              <ObjectStatus text="{leaveRequests>/counts/rejected}" title="Rejected" state="Error"/>
+            </Toolbar>
+          </headerToolbar>
+
+          <columns>
+            <Column width="12rem"><Text text="Leave Type"/></Column>
+            <Column width="16rem"><Text text="Period"/></Column>
+            <Column width="8rem" hAlign="End"><Text text="Days"/></Column>
+            <Column width="18rem"><Text text="Reason"/></Column>
+            <Column width="12rem"><Text text="Status"/></Column>
+            <Column width="8rem" hAlign="End"><Text text="Actions"/></Column>
+          </columns>
+
+          <items>
+            <ColumnListItem type="Active" press=".onViewRequestDetails">
+              <cells>
+                <Text text="{leaveRequests>leaveType}"/>
+                <Text text="{ parts: [{path:'leaveRequests>startDate'},{path:'leaveRequests>endDate'}], formatter: '.formatDateRange' }"/>
+                <Text text="{leaveRequests>daysRequested}"/>
+                <Text text="{leaveRequests>reason}" wrapping="true" maxLines="2"/>
+                <ObjectStatus 
+                  text="{leaveRequests>status}" 
+                  state="{ path: 'leaveRequests>status', formatter: '.formatStatusState' }"/>
+                <HBox justifyContent="End">
+                  <Button 
+                    text="View" 
+                    type="Transparent" 
+                    icon="sap-icon://detail-view"
+                    press=".onViewRequestDetails"/>
+                </HBox>
+              </cells>
+            </ColumnListItem>
+          </items>
+        </Table>
+
+        <!-- Leave Balance Table from OData (keep existing) -->
         <Table
           id="balancesTable"
           inset="false"
@@ -100,26 +140,16 @@
           }"
           class="sapUiMediumMarginTop">
 
-
           <items>
             <ColumnListItem>
               <cells>
-                <!-- Leave Type info -->
                 <ObjectIdentifier title="{leaveType/code}" text="{leaveType/description}"/>
-
-                <!-- Paid or Unpaid -->
                 <ObjectStatus
                   text="{= ${leaveType/isPaid} ? 'Paid' : 'Unpaid' }"
                   state="{= ${leaveType/isPaid} ? 'Success' : 'None' }"/>
-
-                <!-- Max Days -->
                 <Text text="{leaveType/maxDays}"/>
-
-                <!-- Accrued / Used -->
                 <Text text="{path: 'accruedDays', type: 'sap.ui.model.type.Float'}"/>
                 <Text text="{path: 'usedDays', type: 'sap.ui.model.type.Float'}"/>
-
-                <!-- Balance with color -->
                 <ObjectStatus
                   text="{balance}"
                   state="{ path: 'balance', formatter: '.formatBalanceState' }"/>
@@ -127,26 +157,6 @@
             </ColumnListItem>
           </items>
         </Table>
-
-        
-        <!-- Actions -->
-        
-        <!-- <HBox justifyContent="End" width="100%">
-          <Button
-            id="btnApplyLeave"
-            text="Apply Leave"
-            type="Emphasized"
-            icon="sap-icon://add-employee"
-            press=".onOpenApplyLeave"/>
-        </HBox> -->
-          <!-- <HBox width="100%" justifyContent="End" alignItems="Center">
-            <Button 
-              text="Logout" 
-              icon="sap-icon://log" 
-              press=".onLogout" 
-              class="lightRedButton"/>
-          </HBox> -->
- 
 
       </VBox>
     </content>

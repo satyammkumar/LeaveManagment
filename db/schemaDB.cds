@@ -36,7 +36,7 @@ entity LeaveRequest : cuid, managed {
   leaveType     : Association to LeaveType;
   startDate     : Date;
   endDate       : Date;
-  daysRequested : Integer @readonly;
+  daysRequested : Integer;
   reason        : String(500);
   status        : String(20) enum {
     Pending;
@@ -44,9 +44,11 @@ entity LeaveRequest : cuid, managed {
     Rejected;
     Cancelled
   } default 'Pending';
+
   submittedAt   : DateTime;
   approvedAt    : DateTime;
   approvedBy    : String(10);
+  managerComments : String(1000);
   approvals     : Association to many Approval
                     on approvals.leaveRequest = $self;
 }

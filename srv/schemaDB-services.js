@@ -81,50 +81,52 @@ module.exports = cds.service.impl(async function () {
   
   //  BEFORE CREATE: Validate and set empname
   
-  this.before("CREATE", LeaveRequests, async (req) => {
-    const tx = cds.transaction(req);
-    const { employee_employeeId, leaveType_code, startDate, endDate } = req.data;
+  // Update the BEFORE CREATE hook
+this.before("CREATE", LeaveRequests, async (req) => {
+  const tx = cds.transaction(req);
+  const { employee_employeeId, leaveType_code, startDate, endDate } = req.data;
 
-    // Validation
-    if (!employee_employeeId || !leaveType_code || !startDate || !endDate) {
-      req.reject(400, "Missing required fields (employee, leave type, startDate, endDate).");
-    }
-    if (new Date(startDate) > new Date(endDate)) {
-      req.reject(400, "Start date cannot be after end date.");
-    }
+  // Validation
+  if (!employee_employeeId || !leaveType_code || !startDate || !endDate) {
+    req.reject(400, "Missing required fields (employee, leave type, startDate, endDate).");
+  }
+  if (new Date(startDate) > new Date(endDate)) {
+    req.reject(400, "Start date cannot be after end date.");
+  }
 
-    const daysRequested = businessDaysInclusive(startDate, endDate);
-    if (daysRequested < 1) {
-      req.reject(400, "The selected range contains no business days (Mon–Fri).");
-    }
+  // ✅ Calculate business days
+  const daysRequested = businessDaysInclusive(startDate, endDate);
+  if (daysRequested < 1) {
+    req.reject(400, "The selected range contains no business days (Mon–Fri).");
+  }
 
-    const leaveType = await tx.run(SELECT.one.from(LeaveTypes).where({ code: leaveType_code }));
-    if (!leaveType) {
-      req.reject(400, "Invalid leave type.");
-    }
-    if (leaveType.maxDays && Number(leaveType.maxDays) > 0 && daysRequested > Number(leaveType.maxDays)) {
-      req.reject(400, `Requested days (${daysRequested}) exceed maxDays (${leaveType.maxDays}).`);
-    }
+  const leaveType = await tx.run(SELECT.one.from(LeaveTypes).where({ code: leaveType_code }));
+  if (!leaveType) {
+    req.reject(400, "Invalid leave type.");
+  }
+  if (leaveType.maxDays && Number(leaveType.maxDays) > 0 && daysRequested > Number(leaveType.maxDays)) {
+    req.reject(400, `Requested days (${daysRequested}) exceed maxDays (${leaveType.maxDays}).`);
+  }
 
-    const available = await getAvailableBalance(tx, employee_employeeId, leaveType_code);
-    if (available < daysRequested) {
-      req.reject(400, `Insufficient leave balance. Available: ${available}, requested: ${daysRequested}.`);
-    }
+  const available = await getAvailableBalance(tx, employee_employeeId, leaveType_code);
+  if (available < daysRequested) {
+    req.reject(400, `Insufficient leave balance. Available: ${available}, requested: ${daysRequested}.`);
+  }
 
-    if (await hasOverlap(tx, employee_employeeId, startDate, endDate)) {
-      req.reject(400, "Overlapping leave request exists.");
-    }
+  if (await hasOverlap(tx, employee_employeeId, startDate, endDate)) {
+    req.reject(400, "Overlapping leave request exists.");
+  }
 
-    // Set calculated fields
-    req.data.daysRequested = daysRequested;
-    req.data.submittedAt = new Date();
-    if (!req.data.status) req.data.status = "Pending";
+  // ✅ IMPORTANT: Set daysRequested with calculated value
+  req.data.daysRequested = daysRequested;
+  req.data.submittedAt = new Date();
+  if (!req.data.status) req.data.status = "Pending";
 
-    // SET EMPLOYEE NAME
-    if (!req.data.empname) {
-      req.data.empname = await getEmployeeName(tx, employee_employeeId);
-    }
-  });
+  // SET EMPLOYEE NAME
+  if (!req.data.empname) {
+    req.data.empname = await getEmployeeName(tx, employee_employeeId);
+  }
+});
 
     // AFTER CREATE: Update leave balance if approved
 
@@ -172,60 +174,65 @@ module.exports = cds.service.impl(async function () {
 
 
   // ACTION: submitLeaveRequest
-  this.on("submitLeaveRequest", async (req) => {
-    const tx = cds.transaction(req);
-    const { employeeId, leaveTypeCode, startDate, endDate, reason } = req.data;
+// ACTION: submitLeaveRequest
+this.on("submitLeaveRequest", async (req) => {
+  const tx = cds.transaction(req);
+  const { employeeId, leaveTypeCode, startDate, endDate, reason } = req.data;
 
-    // Fetch employee
-    const employee = await tx.run(SELECT.one.from(Employees).where({ employeeId }));
-    if (!employee) req.reject(400, "Invalid employee.");
+  // Fetch employee
+  const employee = await tx.run(SELECT.one.from(Employees).where({ employeeId }));
+  if (!employee) req.reject(400, "Invalid employee.");
 
-    // Get employee name
-    const empName = await getEmployeeName(tx, employeeId);
+  // Get employee name
+  const empName = await getEmployeeName(tx, employeeId);
 
-    // Validate leave type
-    const leaveType = await tx.run(SELECT.one.from(LeaveTypes).where({ code: leaveTypeCode }));
-    if (!leaveType) req.reject(400, "Invalid leave type.");
+  // Validate leave type
+  const leaveType = await tx.run(SELECT.one.from(LeaveTypes).where({ code: leaveTypeCode }));
+  if (!leaveType) req.reject(400, "Invalid leave type.");
 
-    // Prepare entry
-    const entry = {
-      employee_employeeId: employeeId,
-      leaveType_code: leaveTypeCode,
-      startDate,
-      endDate,
-      reason: (reason || "").trim(),
-      status: "Pending",
-      empname: empName,
-    };
+  // ✅ Calculate business days
+  const daysRequested = businessDaysInclusive(new Date(startDate), new Date(endDate));
 
-    // Insert with fallback
-    let created;
-    try {
-      const res = await tx.run(INSERT.into(LeaveRequests).entries(entry).returning("*"));
-      created = Array.isArray(res) ? res[0] : res;
-    } catch (e) {
-      const ins = await tx.run(INSERT.into(LeaveRequests).entries(entry));
-      const createdId = ins?.ID || ins?.ID_cuid || ins?.ID_uuid;
-      created = createdId
-        ? await tx.run(SELECT.one.from(LeaveRequests).where({ ID: createdId }))
-        : await tx.run(
-          SELECT.one.from(LeaveRequests)
-            .where({
-              employee_employeeId: employeeId,
-              leaveType_code: leaveTypeCode,
-              startDate,
-              endDate
-            })
-            .orderBy({ submittedAt: "desc" })
-        );
-    }
+  // Prepare entry
+  const entry = {
+    employee_employeeId: employeeId,
+    leaveType_code: leaveTypeCode,
+    startDate,
+    endDate,
+    daysRequested: daysRequested,  // ✅ Set calculated days
+    reason: (reason || "").trim(),
+    status: "Pending",
+    empname: empName,
+  };
 
-    if (created) {
-      created.empName = empName;
-    }
+  // Insert with fallback
+  let created;
+  try {
+    const res = await tx.run(INSERT.into(LeaveRequests).entries(entry).returning("*"));
+    created = Array.isArray(res) ? res[0] : res;
+  } catch (e) {
+    const ins = await tx.run(INSERT.into(LeaveRequests).entries(entry));
+    const createdId = ins?.ID || ins?.ID_cuid || ins?.ID_uuid;
+    created = createdId
+      ? await tx.run(SELECT.one.from(LeaveRequests).where({ ID: createdId }))
+      : await tx.run(
+        SELECT.one.from(LeaveRequests)
+          .where({
+            employee_employeeId: employeeId,
+            leaveType_code: leaveTypeCode,
+            startDate,
+            endDate
+          })
+          .orderBy({ submittedAt: "desc" })
+      );
+  }
 
-    return created;
-  });
+  if (created) {
+    created.empName = empName;
+  }
+
+  return created;
+});
 
   // Approve a pending leave request
   this.on("approveLeaveRequest", async (req) => {
@@ -263,29 +270,81 @@ module.exports = cds.service.impl(async function () {
   });
 
   //  ACTION: rejectLeaveRequest
-  this.on("rejectLeaveRequest", async (req) => {
-    const tx = cds.transaction(req);
-    const { requestId, approverId, comments } = req.data;
+ // Update the rejectLeaveRequest action
+this.on("rejectLeaveRequest", async (req) => {
+  const tx = cds.transaction(req);
+  const { requestId, approverId, comments } = req.data;
 
-    const request = await tx.run(SELECT.one.from(LeaveRequests).where({ ID: requestId }));
-    if (!request || request.status !== "Pending") {
-      req.reject(400, "Invalid or non-pending request.");
-    }
+  const request = await tx.run(SELECT.one.from(LeaveRequests).where({ ID: requestId }));
+  if (!request || request.status !== "Pending") {
+    req.reject(400, "Invalid or non-pending request.");
+  }
 
-    await tx.run(UPDATE(LeaveRequests).set({ status: "Rejected" }).where({ ID: requestId }));
-
-    await tx.run(
-      INSERT.into(Approvals).entries({
-        leaveRequest_ID: requestId,
-        approverId,
+  // ✅ UPDATE: Save manager comments in LeaveRequest
+  await tx.run(
+    UPDATE(LeaveRequests)
+      .set({ 
         status: "Rejected",
-        comments,
-        approvedAt: new Date()
+        approvedAt: new Date(),
+        approvedBy: approverId,
+        managerComments: comments  // ✅ Store manager's rejection message
       })
-    );
+      .where({ ID: requestId })
+  );
 
-    return await tx.run(SELECT.one.from(LeaveRequests).where({ ID: requestId }));
-  });
+  await tx.run(
+    INSERT.into(Approvals).entries({
+      leaveRequest_ID: requestId,
+      approverId,
+      status: "Rejected",
+      comments,
+      approvedAt: new Date()
+    })
+  );
+
+  return await tx.run(SELECT.one.from(LeaveRequests).where({ ID: requestId }));
+});
+
+// Update the approveLeaveRequest action to also store comments
+this.on("approveLeaveRequest", async (req) => {
+  const tx = cds.transaction(req);
+  const { requestId, approverId, comments } = req.data;
+
+  const request = await tx.run(SELECT.one.from(LeaveRequests).where({ ID: requestId }));
+  if (!request || request.status !== "Pending") {
+    req.reject(400, "Invalid or non-pending request.");
+  }
+
+  // ✅ UPDATE: Save manager comments
+  await tx.run(
+    UPDATE(LeaveRequests)
+      .set({ 
+        status: "Approved", 
+        approvedAt: new Date(), 
+        approvedBy: approverId,
+        managerComments: comments  // ✅ Store manager's approval message
+      })
+      .where({ ID: requestId })
+  );
+
+  await tx.run(
+    INSERT.into(Approvals).entries({
+      leaveRequest_ID: requestId,
+      approverId,
+      status: "Approved",
+      comments,
+      approvedAt: new Date()
+    })
+  );
+
+  await tx.run(
+    UPDATE(LeaveBalances)
+      .set({ usedDays: { "+=": request.daysRequested } })
+      .where({ employee_employeeId: request.employee_employeeId, leaveType_code: request.leaveType_code })
+  );
+
+  return await tx.run(SELECT.one.from(LeaveRequests).where({ ID: requestId }));
+});
 
     // ACTION: cancelLeaveRequest
   this.on("cancelLeaveRequest", async (req) => {
@@ -592,90 +651,88 @@ this.on('register', async (req) => {
 
   
    // Get all leave requests for a specific employee
-  this.on("leaveRequests", async (req) => {
-    const tx = cds.transaction(req);
-    const { employeeID } = req.data;
+ // In srv/leave-service.js - update the leaveRequests action
+this.on("leaveRequests", async (req) => {
+  const tx = cds.transaction(req);
+  const { employeeID } = req.data;
 
-    if (!employeeID) {
-      return {
-        success: false,
-        message: "Employee ID is required",
-        requests: [],
-        count: 0
-      };
-    }
+  if (!employeeID) {
+    return {
+      success: false,
+      message: "Employee ID is required",
+      requests: [],
+      count: 0
+    };
+  }
 
-    try {
-      // Fetch all leave requests for this employee
-      const requests = await tx.run(
-        SELECT.from(LeaveRequests)
-          .columns(
-            "ID",
-            "empname",
-            "employee_employeeId",
-            "leaveType_code",
-            "startDate",
-            "endDate",
-            "daysRequested",
-            "reason",
-            "status",
-            "submittedAt",
-            "approvedBy",
-            "approvedAt"
-          )
-          .where({ employee_employeeId: employeeID })
-          .orderBy({ submittedAt: "desc" })
-      );
+  try {
+    const requests = await tx.run(
+      SELECT.from(LeaveRequests)
+        .columns(
+          "ID",
+          "empname",
+          "employee_employeeId",
+          "leaveType_code",
+          "startDate",
+          "endDate",
+          "daysRequested",
+          "reason",
+          "status",
+          "submittedAt",
+          "approvedBy",
+          "approvedAt",
+          "managerComments"  // ✅ ADD THIS
+        )
+        .where({ employee_employeeId: employeeID })
+        .orderBy({ submittedAt: "desc" })
+    );
 
-      // Fetch leave type descriptions
-      const leaveTypes = await tx.run(SELECT.from(LeaveTypes).columns("code", "description"));
-      const leaveTypeMap = {};
-      (leaveTypes || []).forEach(lt => {
-        leaveTypeMap[lt.code] = lt.description || lt.code;
-      });
+    const leaveTypes = await tx.run(SELECT.from(LeaveTypes).columns("code", "description"));
+    const leaveTypeMap = {};
+    (leaveTypes || []).forEach(lt => {
+      leaveTypeMap[lt.code] = lt.description || lt.code;
+    });
 
-      // Format responses and ensure empname is populated
-      const formattedRequests = [];
-      for (const req of requests || []) {
-        let empname = req.empname;
+    const formattedRequests = [];
+    for (const req of requests || []) {
+      let empname = req.empname;
 
-        // If empname is missing or equals employee ID, fetch it
-        if (!empname || empname === req.employee_employeeId) {
-          empname = await getEmployeeName(tx, req.employee_employeeId);
-        }
-
-        formattedRequests.push({
-          id: String(req.ID),
-          empname: empname,
-          employeeId: req.employee_employeeId || "",
-          leaveType: leaveTypeMap[req.leaveType_code] || req.leaveType_code,
-          leaveTypeCode: req.leaveType_code,
-          startDate: req.startDate,
-          endDate: req.endDate,
-          daysRequested: Number(req.daysRequested || 0),
-          reason: req.reason || "",
-          status: req.status || "Pending",
-          submittedAt: req.submittedAt,
-          approvedBy: req.approvedBy || "",
-          approvedAt: req.approvedAt || null
-        });
+      if (!empname || empname === req.employee_employeeId) {
+        empname = await getEmployeeName(tx, req.employee_employeeId);
       }
 
-      return {
-        success: true,
-        message: `Retrieved ${formattedRequests.length} leave request(s)`,
-        requests: formattedRequests,
-        count: formattedRequests.length
-      };
-    } catch (error) {
-      console.error("leaveRequests error:", error);
-      return {
-        success: false,
-        message: "An error occurred retrieving leave requests",
-        requests: [],
-        count: 0
-      };
+      formattedRequests.push({
+        id: String(req.ID),
+        empname: empname,
+        employeeId: req.employee_employeeId || "",
+        leaveType: leaveTypeMap[req.leaveType_code] || req.leaveType_code,
+        leaveTypeCode: req.leaveType_code,
+        startDate: req.startDate,
+        endDate: req.endDate,
+        daysRequested: Number(req.daysRequested || 0),
+        reason: req.reason || "",
+        status: req.status || "Pending",
+        submittedAt: req.submittedAt,
+        approvedBy: req.approvedBy || "",
+        approvedAt: req.approvedAt || null,
+        managerComments: req.managerComments || ""  // ✅ ADD THIS
+      });
     }
-  });
 
+    return {
+      success: true,
+      message: `Retrieved ${formattedRequests.length} leave request(s)`,
+      requests: formattedRequests,
+      count: formattedRequests.length
+    };
+  } catch (error) {
+    console.error("leaveRequests error:", error);
+    return {
+      success: false,
+      message: "An error occurred retrieving leave requests",
+      requests: [],
+      count: 0
+    };
+  }
+});
 });

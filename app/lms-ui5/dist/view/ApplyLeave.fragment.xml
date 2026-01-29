@@ -1,0 +1,69 @@
+
+<core:FragmentDefinition
+  xmlns="sap.m"
+  xmlns:mvc="sap.ui.core.mvc"
+  xmlns:core="sap.ui.core"
+  xmlns:unified="sap.ui.unified"
+  >
+
+  <Dialog
+    id="applyLeaveDialog"
+    
+    title="Apply for Leave"
+    class="sapUiContentPadding"
+    type="Message">
+
+    <content>
+      <VBox width="100%" renderType="Bare" class="sapUiSmallMarginTop">
+
+        <!-- Select Leave Type -->
+        <Label text="Leave Type" labelFor="leaveTypeSelect"/>
+        <Select
+          id="leaveTypeSelect"
+          width="100%"
+          required="true"
+          selectedKey="{applyLeave>/selectedLeaveType}"
+          items="{
+            path: 'applyLeave>/leaveTypes'
+          }">
+          <core:Item key="{applyLeave>code}" text="{applyLeave>description}"/>
+        </Select>
+
+        <!-- Calendar (Date selection) -->
+        <Label text="Select Dates" class="sapUiSmallMarginTop"/>
+        <unified:Calendar
+          id="leaveCalendar"
+          minDate="{applyLeave>/minDate}"
+          maxDate="{applyLeave>/maxDate}"
+          singleSelection="false"
+          months="1"
+          intervalSelection="false"
+          select=".onCalendarSelect">
+        </unified:Calendar>
+
+        <!-- Optional: Show selected date count -->
+        <ObjectStatus
+          class="sapUiSmallMarginTop"
+          text="{= ${applyLeave>/selectedDates}.length ? 'Selected Days: ' + ${applyLeave>/selectedDates}.length : 'No dates selected' }"
+          state="Information"/>
+
+        <!-- Reason -->
+        <Label text="Reason (optional)" class="sapUiSmallMarginTop"/>
+        <TextArea
+          id="reasonInput"
+          rows="4"
+          width="100%"
+          placeholder="Add any note for approver"
+          value="{applyLeave>/reason}"/>
+
+      </VBox>
+    </content>
+
+    <beginButton>
+      <Button text="Submit" type="Emphasized" press=".onSubmitLeave"/>
+    </beginButton>
+    <endButton>
+      <Button text="Cancel" press=".onCancelApplyLeave"/>
+    </endButton>
+  </Dialog>
+</core:FragmentDefinition>

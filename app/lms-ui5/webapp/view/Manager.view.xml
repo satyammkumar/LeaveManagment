@@ -29,7 +29,7 @@
 
         <!-- Filter Bar -->
         <Toolbar class="sapUiMediumMarginTop">
-          <Select id="selStatus" width="5rem" change=".onStatusChange">
+          <Select id="selStatus" width="10rem" change=".onStatusChange">
             <items>
               <core:Item key="Pending"  text="Pending"/>
               <core:Item key="Approved" text="Approved"/>
@@ -39,15 +39,15 @@
             </items>
           </Select>
 
-          <DateRangeSelection id="drSubmitted"
+          <!-- <DateRangeSelection id="drSubmitted"
                               displayFormat="medium"
                               delimiter="→"
                               change=".onDateRangeChange"
                               width="16rem"
-                              class="sapUiTinyMarginBegin"/>
+                              class="sapUiTinyMarginBegin"/> -->
 
           <SearchField id="reqSearch"
-                       placeholder="Search: employee, leave type, or reason"
+                       placeholder="Employee, Leavetype, or Reason"
                        width="22rem"
                        liveChange=".onLiveSearch"
                        search=".onSearch"

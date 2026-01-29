@@ -12,7 +12,6 @@
     <content>
       <VBox class="sapUiSmallMargin">
         
-        <!-- Request Information -->
         <l:VerticalLayout class="sapUiSmallMarginBottom">
           <ObjectAttribute title="Leave Type" text="{leaveRequests>leaveType}"/>
           <ObjectAttribute title="Period" 

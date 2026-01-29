@@ -235,59 +235,68 @@ this.on("submitLeaveRequest", async (req) => {
 });
 
   // Approve a pending leave request
-  this.on("approveLeaveRequest", async (req) => {
-    const tx = cds.transaction(req);
-    const { requestId, approverId, comments } = req.data;
+// APPROVE
+this.on("approveLeaveRequest", async (req) => {
+  const tx = cds.transaction(req);
+  const { requestId, approverId, comments } = req.data;
 
-    const request = await tx.run(SELECT.one.from(LeaveRequests).where({ ID: requestId }));
-    if (!request || request.status !== "Pending") {
-      req.reject(400, "Invalid or non-pending request.");
-    }
+  const request = await tx.run(SELECT.one.from(LeaveRequests).where({ ID: requestId }));
+  if (!request || request.status !== "Pending") {
+    return req.reject(400, "Invalid or non-pending request.");
+  }
 
-    await tx.run(
-      UPDATE(LeaveRequests)
-        .set({ status: "Approved", approvedAt: new Date(), approvedBy: approverId })
-        .where({ ID: requestId })
-    );
-
-    await tx.run(
-      INSERT.into(Approvals).entries({
-        leaveRequest_ID: requestId,
-        approverId,
+  await tx.run(
+    UPDATE(LeaveRequests)
+      .set({
         status: "Approved",
-        comments,
-        approvedAt: new Date()
+        approvedAt: new Date(),
+        approvedBy: approverId || null,
+        managerComments: comments || null
       })
-    );
+      .where({ ID: requestId })
+  );
 
-    await tx.run(
-      UPDATE(LeaveBalances)
-        .set({ usedDays: { "+=": request.daysRequested } })
-        .where({ employee_employeeId: request.employee_employeeId, leaveType_code: request.leaveType_code })
-    );
+  // Track decision
+  await tx.run(
+    INSERT.into(Approvals).entries({
+      leaveRequest_ID: requestId,
+      approverId,
+      status: "Approved",
+      comments,
+      approvedAt: new Date()
+    })
+  );
 
-    return await tx.run(SELECT.one.from(LeaveRequests).where({ ID: requestId }));
-  });
+  // Increase usedDays
+  await tx.run(
+    UPDATE(LeaveBalances)
+      .set({ usedDays: { "+=": request.daysRequested } })
+      .where({
+        employee_employeeId: request.employee_employeeId,
+        leaveType_code: request.leaveType_code
+      })
+  );
 
-  //  ACTION: rejectLeaveRequest
- // Update the rejectLeaveRequest action
+  return await tx.run(SELECT.one.from(LeaveRequests).where({ ID: requestId }));
+});
+
+// REJECT
 this.on("rejectLeaveRequest", async (req) => {
   const tx = cds.transaction(req);
   const { requestId, approverId, comments } = req.data;
 
   const request = await tx.run(SELECT.one.from(LeaveRequests).where({ ID: requestId }));
   if (!request || request.status !== "Pending") {
-    req.reject(400, "Invalid or non-pending request.");
+    return req.reject(400, "Invalid or non-pending request.");
   }
 
-  // ✅ UPDATE: Save manager comments in LeaveRequest
   await tx.run(
     UPDATE(LeaveRequests)
-      .set({ 
+      .set({
         status: "Rejected",
         approvedAt: new Date(),
-        approvedBy: approverId,
-        managerComments: comments  // ✅ Store manager's rejection message
+        approvedBy: approverId || null,
+        managerComments: comments || null
       })
       .where({ ID: requestId })
   );
@@ -305,46 +314,6 @@ this.on("rejectLeaveRequest", async (req) => {
   return await tx.run(SELECT.one.from(LeaveRequests).where({ ID: requestId }));
 });
 
-// Update the approveLeaveRequest action to also store comments
-this.on("approveLeaveRequest", async (req) => {
-  const tx = cds.transaction(req);
-  const { requestId, approverId, comments } = req.data;
-
-  const request = await tx.run(SELECT.one.from(LeaveRequests).where({ ID: requestId }));
-  if (!request || request.status !== "Pending") {
-    req.reject(400, "Invalid or non-pending request.");
-  }
-
-  // ✅ UPDATE: Save manager comments
-  await tx.run(
-    UPDATE(LeaveRequests)
-      .set({ 
-        status: "Approved", 
-        approvedAt: new Date(), 
-        approvedBy: approverId,
-        managerComments: comments  // ✅ Store manager's approval message
-      })
-      .where({ ID: requestId })
-  );
-
-  await tx.run(
-    INSERT.into(Approvals).entries({
-      leaveRequest_ID: requestId,
-      approverId,
-      status: "Approved",
-      comments,
-      approvedAt: new Date()
-    })
-  );
-
-  await tx.run(
-    UPDATE(LeaveBalances)
-      .set({ usedDays: { "+=": request.daysRequested } })
-      .where({ employee_employeeId: request.employee_employeeId, leaveType_code: request.leaveType_code })
-  );
-
-  return await tx.run(SELECT.one.from(LeaveRequests).where({ ID: requestId }));
-});
 
     // ACTION: cancelLeaveRequest
   this.on("cancelLeaveRequest", async (req) => {

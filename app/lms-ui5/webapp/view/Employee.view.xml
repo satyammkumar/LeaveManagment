@@ -15,10 +15,10 @@
         <HBox width="100%" justifyContent="SpaceBetween" alignItems="Center">
           <Title text="Welcome, {user>/fullName}" level="H2"/>
           <HBox width="100%" justifyContent="End" alignItems="Center">
-            <Button 
-              text="Logout" 
-              icon="sap-icon://log" 
-              press=".onLogout" 
+            <Button
+              text="Logout"
+              icon="sap-icon://log"
+              press=".onLogout"
               class="lightRedButton"/>
           </HBox>
         </HBox>
@@ -40,7 +40,7 @@
           <Button text="Refresh" press=".onRefresh" icon="sap-icon://refresh" type="Emphasized"/>
         </Toolbar>
 
-        <!-- Leave Balance Table from Backend API -->
+        <!-- Leave Balance Table from Backend API (user model) -->
         <Table
           id="leaveBalancesTable"
           inset="false"
@@ -76,7 +76,7 @@
           </items>
         </Table>
 
-        <!-- ✅ NEW: My Leave Requests Table -->
+        <!-- ✅ My Leave Requests Table (leaveRequests JSONModel) -->
         <Table
           id="myRequestsTable"
           inset="false"
@@ -103,28 +103,34 @@
           </columns>
 
           <items>
+            <!-- Row press opens FULL details dialog -->
             <ColumnListItem type="Active" press=".onViewRequestDetails">
               <cells>
                 <Text text="{leaveRequests>leaveType}"/>
-                <Text text="{ parts: [{path:'leaveRequests>startDate'},{path:'leaveRequests>endDate'}], formatter: '.formatDateRange' }"/>
+                <Text text="{
+                  parts: [{path:'leaveRequests>startDate'},{path:'leaveRequests>endDate'}],
+                  formatter: '.formatDateRange'
+                }"/>
                 <Text text="{leaveRequests>daysRequested}"/>
                 <Text text="{leaveRequests>reason}" wrapping="true" maxLines="2"/>
-                <ObjectStatus 
-                  text="{leaveRequests>status}" 
+                <ObjectStatus
+                  text="{leaveRequests>status}"
                   state="{ path: 'leaveRequests>status', formatter: '.formatStatusState' }"/>
                 <HBox justifyContent="End">
-                  <Button 
-                    text="View" 
-                    type="Transparent" 
+                  <!-- Button opens Manager Message dialog -->
+                  <Button
+                    text="View"
+                    type="Transparent"
                     icon="sap-icon://detail-view"
-                    press=".onViewRequestDetails"/>
+                    press=".onOpenManagerMessage"
+                    tooltip="View manager message"/>
                 </HBox>
               </cells>
             </ColumnListItem>
           </items>
         </Table>
 
-        <!-- Leave Balance Table from OData (keep existing) -->
+        <!-- Leave Balance Table from OData (existing) -->
         <Table
           id="balancesTable"
           inset="false"

@@ -1,4 +1,3 @@
-
 <mvc:View
   controllerName="lmsui5.controller.View1"
   xmlns:mvc="sap.ui.core.mvc"
@@ -8,32 +7,40 @@
   <App id="app1">
     <Page id="loginPage" showHeader="false" backgroundDesign="Solid">
       <content>
-        <VBox width="100%" height="100%" alignItems="Center" justifyContent="Center" class="login__viewport">
-          <VBox class="login__card login__form" width="auto">
-            <Title text="Sign in" class="login__title"/>
-            <Text text="Use your Employee or Manager credentials" class="login__subtitle"/>
 
-            <Input id="username" placeholder="Email" valueLiveUpdate="true"/>
-            <Input id="password" type="Password" placeholder="Password" valueLiveUpdate="true"/>
+        <!-- Split Container -->
+        <HBox width="100%" height="100%" class="login-wrapper">
 
-            <!-- Actions -->
-            <HBox class="login__actions sapUiSmallMarginTop" justifyContent="SpaceBetween" width="100%">
-              <Button id="btnRegister" text="Register" type="Transparent" press=".onOpenRegister"/>
-              <Button id="btnLogin" text="Login" type="Emphasized" press=".onLogin"/>
-            </HBox>
+          <!-- LEFT BLUE BACKGROUND AREA -->
+          <VBox width="60%" height="100%" class="login-left-bg"></VBox>
 
-            <MessageStrip id="msg" type="Error" showIcon="true" visible="false" class="sapUiTinyMarginTop"/>
+          <!-- RIGHT LOGIN PANEL -->
+          <VBox width="40%" height="100%" alignItems="Center" justifyContent="Center">
+            <!-- CARD -->
+            <VBox width="70%" class="login-card">
+              <Title text="Leave Application" class="login-title"/>
+              <Text text="Sign in with your organizational account" class="login-subtitle"/>
 
-            <!-- Optional summary if already bound to user model -->
-            <ObjectHeader
-              id="ohUser"
-              title="{user>/fullName}"
-              intro="{= ${user>/role} ? 'Signed in as ' + ${user>/role} : '' }"
-              visible="{= !!${user>/username} }"
-              class="sapUiTinyMarginTop"/>
+              <Input id="username" placeholder="someone@example.com" class="sapUiSmallMarginTop"/>
+              <Input id="password" type="Password" placeholder="Password" class="sapUiSmallMarginTop"/>
+
+              <HBox class="login-actions sapUiSmallMarginTop" justifyContent="SpaceBetween" width="100%">
+                <Button id="btnRegister" text="Register" type="Transparent" press=".onOpenRegister"/>
+                <Button id="btnLogin" text="Sign in" type="Emphasized" width="100px" press=".onLogin"/>
+              </HBox>
+
+              <MessageStrip 
+                id="msg" 
+                type="Error" 
+                showIcon="true" 
+                visible="false"
+                class="sapUiTinyMarginTop"/>
+            </VBox>
           </VBox>
-        </VBox>
+        </HBox>
+
       </content>
     </Page>
   </App>
+
 </mvc:View>

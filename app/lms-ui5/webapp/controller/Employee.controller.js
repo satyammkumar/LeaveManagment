@@ -13,25 +13,25 @@ sap.ui.define([
   return Controller.extend("lmsui5.controller.Employee", {
 
     onInit: function () {
-      // Ensure 'user' model exists on Component
+      // Ensure 'user' model exists
       if (!this.getOwnerComponent().getModel("user")) {
         this.getOwnerComponent().setModel(new JSONModel({}), "user");
       }
 
-      // Transient model for Apply Leave
+      // Transient model for Apply Leave dialog
       this.getView().setModel(new JSONModel(this._buildApplyLeaveModelData()), "applyLeave");
 
-      // ✅ NEW: Model for leave requests
+      // My Leave Requests model
       this.getView().setModel(new JSONModel({
         requests: [],
         counts: { total: 0, pending: 0, approved: 0, rejected: 0 }
       }), "leaveRequests");
 
-      // Route → load employee data when navigated with { username } (email)
+      // Route → load employee data by email
       const oRouter = this.getOwnerComponent().getRouter();
       oRouter.getRoute("Employee").attachPatternMatched(this._onRouteMatched, this);
 
-      // Apply filter by employeeId & refresh data after page is visible
+      // After show → apply OData filter and refresh data
       this.getView().addEventDelegate({
         onAfterShow: function () {
           this._applyEmployeeFilter();
@@ -39,7 +39,7 @@ sap.ui.define([
         }.bind(this)
       });
 
-      // 🔔 Subscribe to leave change events
+      // Subscribe to leave changes
       this._bus = sap.ui.getCore().getEventBus();
       this._bus.subscribe("leave", "changed", this._onLeaveChanged, this);
     },
@@ -53,12 +53,16 @@ sap.ui.define([
         this._pRequestDetailsDlg.then(function (oDialog) { oDialog.destroy(); });
         this._pRequestDetailsDlg = null;
       }
+      if (this._pManagerMsgDlg) {
+        this._pManagerMsgDlg.then(function (oDialog) { oDialog.destroy(); });
+        this._pManagerMsgDlg = null;
+      }
       if (this._bus) {
         this._bus.unsubscribe("leave", "changed", this._onLeaveChanged, this);
       }
     },
 
-    /** Load employee profile by email via CAP action and set user model */
+    /** Load employee profile by email */
     getEmployeeData: async function (sUsername) {
       const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailPattern.test(sUsername)) {
@@ -99,7 +103,7 @@ sap.ui.define([
           const fullName = `${data.employee.firstName || ""} ${data.employee.lastName || ""}`.trim();
           oUserModel.setProperty("/fullName", fullName);
 
-          if (data.leaveBalances && Array.isArray(data.leaveBalances)) {
+          if (Array.isArray(data.leaveBalances)) {
             oUserModel.setProperty("/leaveBalances", data.leaveBalances);
           }
         }
@@ -107,7 +111,7 @@ sap.ui.define([
         MessageToast.show("Employee data loaded successfully");
         this._applyEmployeeFilter();
 
-        // ✅ NEW: Load leave requests after employee data is loaded
+        // Load my leave requests
         this._loadMyLeaveRequests();
 
       } catch (err) {
@@ -120,7 +124,7 @@ sap.ui.define([
       MessageToast.show(sMessage, { duration: 3000 });
     },
 
-    /** Router handler — receives email as route argument */
+    /** Route handler — receives email */
     _onRouteMatched: function (oEvent) {
       const oArgs = oEvent.getParameter("arguments");
       const sUsername = oArgs.username;
@@ -135,18 +139,16 @@ sap.ui.define([
       }
     },
 
-    /** Apply table filter: LeaveBalances for current employeeId */
+    /** Apply OData filter on balancesTable for current employee */
     _applyEmployeeFilter: function () {
       const oUserModel = this.getOwnerComponent().getModel("user");
       const sEmpId = oUserModel && oUserModel.getProperty("/employeeId");
 
-      const oTable = this.byId("balancesTable");
-      const oBinding = oTable?.getBinding("items");
+      const oBinding = this.byId("balancesTable")?.getBinding("items");
       if (!oBinding) return;
 
       if (sEmpId) {
-        const aFilters = [new Filter("employee/employeeId", FilterOperator.EQ, sEmpId)];
-        oBinding.filter(aFilters);
+        oBinding.filter([new Filter("employee/employeeId", FilterOperator.EQ, sEmpId)]);
       } else {
         oBinding.filter([]);
       }
@@ -163,8 +165,7 @@ sap.ui.define([
     },
 
     _applySearchFilter: function (sQuery) {
-      const oTable = this.byId("balancesTable");
-      const oBinding = oTable?.getBinding("items");
+      const oBinding = this.byId("balancesTable")?.getBinding("items");
       if (!oBinding) return;
 
       const aFilters = [];
@@ -175,16 +176,14 @@ sap.ui.define([
       }
 
       if (sQuery) {
-        const oOr = new Filter({
+        aFilters.push(new Filter({
           filters: [
             new Filter("leaveType/code", FilterOperator.Contains, sQuery),
             new Filter("leaveType/description", FilterOperator.Contains, sQuery)
           ],
           and: false
-        });
-        aFilters.push(oOr);
+        }));
       }
-
       oBinding.filter(aFilters);
     },
 
@@ -234,6 +233,7 @@ sap.ui.define([
       });
     },
 
+    // Status formatter
     formatBalanceState: function (v) {
       const n = Number(v);
       if (isNaN(n)) return "None";
@@ -242,7 +242,6 @@ sap.ui.define([
       return "Success";
     },
 
-    // ✅ NEW: Format status to semantic state
     formatStatusState: function (s) {
       switch ((s || "").toLowerCase()) {
         case "pending": return "Warning";
@@ -253,7 +252,7 @@ sap.ui.define([
       }
     },
 
-    // ✅ NEW: Format date range
+    // Date formatters
     formatDateRange: function (sStart, sEnd) {
       if (!sStart && !sEnd) return "";
       try {
@@ -266,7 +265,6 @@ sap.ui.define([
       }
     },
 
-    // ✅ NEW: Format datetime
     formatDateTime: function (sDateTime) {
       if (!sDateTime) return "";
       try {
@@ -277,11 +275,10 @@ sap.ui.define([
       }
     },
 
-    // ✅ NEW: Load my leave requests
+    /** Load my leave requests from CAP action */
     _loadMyLeaveRequests: async function () {
       const oUserModel = this.getOwnerComponent().getModel("user");
       const sEmployeeId = oUserModel?.getProperty("/employeeId");
-
       if (!sEmployeeId) return;
 
       try {
@@ -291,14 +288,11 @@ sap.ui.define([
           body: JSON.stringify({ employeeID: sEmployeeId })
         });
 
-        if (!res.ok) {
-          throw new Error("Failed to load leave requests");
-        }
+        if (!res.ok) throw new Error("Failed to load leave requests");
 
         const data = await res.json();
         const requests = data.requests || [];
 
-        // Calculate counts
         const counts = {
           total: requests.length,
           pending: requests.filter(r => r.status === "Pending").length,
@@ -310,24 +304,17 @@ sap.ui.define([
         oRequestsModel.setProperty("/requests", requests);
         oRequestsModel.setProperty("/counts", counts);
 
-        // ✅ NEW: Check for new rejections and show notifications
         this._checkForRejectionNotifications(requests);
-
       } catch (err) {
         console.error("Failed to load leave requests:", err);
       }
     },
 
-    // ✅ NEW: Check for new rejection notifications
+    // Optional alert for new rejections
     _checkForRejectionNotifications: function (requests) {
-      const rejectedRequests = requests.filter(r => 
-        r.status === "Rejected" && r.managerComments
-      );
-
+      const rejectedRequests = requests.filter(r => r.status === "Rejected" && r.managerComments);
       if (rejectedRequests.length > 0) {
-        // Show the first rejection (or you can show all)
         const latestRejection = rejectedRequests[0];
-        
         MessageBox.warning(
           latestRejection.managerComments || "No reason provided by manager",
           {
@@ -337,7 +324,6 @@ sap.ui.define([
             emphasizedAction: MessageBox.Action.OK,
             onClose: (sAction) => {
               if (sAction === "View All Requests") {
-                // Scroll to requests table or open a dialog
                 const oRequestsTable = this.byId("myRequestsTable");
                 if (oRequestsTable) {
                   oRequestsTable.getDomRef()?.scrollIntoView({ behavior: "smooth" });
@@ -349,24 +335,26 @@ sap.ui.define([
       }
     },
 
-    // ✅ NEW: View request details (including manager comments)
+    // ===== Full details dialog (row press) =====
     onViewRequestDetails: function (oEvent) {
       const ctx = oEvent.getSource().getBindingContext("leaveRequests");
-      const oData = ctx.getObject();
-
+      const oData = ctx && ctx.getObject();
       if (!oData) return;
 
       const sFragId = this.getView().getId() + "--requestDetailsFrag";
 
       if (!this._pRequestDetailsDlg) {
         this._pRequestDetailsDlg = Fragment.load({
-          name: "lmsui5.view.fragments.RequestDetails",
+          name: "lmsui5.view.RequestDetail",  // <-- file: view/RequestDetail.fragment.xml
           controller: this,
           id: sFragId
         }).then(function (oDialog) {
           this.getView().addDependent(oDialog);
           return oDialog;
-        }.bind(this));
+        }.bind(this)).catch(function (e) {
+          console.error("RequestDetail fragment load failed:", e);
+          MessageBox.error(e.message || "Failed to open the details dialog.");
+        });
       }
 
       this._pRequestDetailsDlg.then(function (oDialog) {
@@ -375,9 +363,7 @@ sap.ui.define([
       });
     },
 
-    // ✅ NEW: Close request details dialog
     onCloseRequestDetails: function () {
-      const sFragId = this.getView().getId() + "--requestDetailsFrag";
       if (this._pRequestDetailsDlg) {
         this._pRequestDetailsDlg.then(function (oDialog) {
           oDialog.close();
@@ -385,7 +371,7 @@ sap.ui.define([
       }
     },
 
-    // ========= Apply Leave Dialog =========
+    // ===== Apply Leave dialog =====
     onOpenApplyLeave: function () {
       const oApplyModel = this.getView().getModel("applyLeave");
       oApplyModel.setData(this._buildApplyLeaveModelData());
@@ -394,14 +380,14 @@ sap.ui.define([
 
       if (!this._pApplyLeaveDlg) {
         this._pApplyLeaveDlg = Fragment.load({
-          name: "lmsui5.view.ApplyLeave",
+          name: "lmsui5.view.ApplyLeave", // file: view/ApplyLeave.fragment.xml
           controller: this,
           id: sFragId
         }).then(function (oDialog) {
           this.getView().addDependent(oDialog);
           return oDialog;
         }.bind(this)).catch(function (e) {
-          console.error("Fragment load failed:", e);
+          console.error("ApplyLeave fragment load failed:", e);
           MessageBox.error("Failed to load Apply Leave dialog.");
         });
       }
@@ -419,7 +405,6 @@ sap.ui.define([
 
     onCancelApplyLeave: function () {
       const sFragId = this.getView().getId() + "--applyLeaveFrag";
-
       if (this._pApplyLeaveDlg) {
         this._pApplyLeaveDlg.then(function (oDialog) {
           const oCalendar = Fragment.byId(sFragId, "leaveCalendar");
@@ -466,7 +451,7 @@ sap.ui.define([
       }
     },
 
-    /** Final submit: call CAP action and sync UI */
+    /** Submit leave */
     onSubmitLeave: async function () {
       const oApply = this.getView().getModel("applyLeave");
       const sEmployeeId = this.getOwnerComponent().getModel("user")?.getProperty("/employeeId");
@@ -510,9 +495,7 @@ sap.ui.define([
       }
     },
 
-    // =========================
-    // Helpers
-    // =========================
+    // ============== helpers for dates ==============
     _buildApplyLeaveModelData: function () {
       return {
         selectedLeaveType: "",
@@ -598,12 +581,11 @@ sap.ui.define([
       return out;
     },
 
-    /** 🔁 Centralized self-refresh after any change for this employee */
+    /** Centralized refresh */
     _refreshOwnLeaveData: async function () {
       const balBinding = this.byId("balancesTable")?.getBinding("items");
       balBinding?.refresh();
 
-      // ✅ UPDATED: Also refresh leave requests
       await this._loadMyLeaveRequests();
 
       try {
@@ -623,24 +605,95 @@ sap.ui.define([
           }
         }
       } catch (e) {
-        // Silent fail
+        // silent
       }
     },
 
-    /** 🔔 EventBus callback: refresh only if the change is for THIS employee */
+    /** Refresh only for this employee on EventBus */
     _onLeaveChanged: function (sChannel, sEvent, oData) {
       try {
         const myEmpId = this.getOwnerComponent().getModel("user")?.getProperty("/employeeId");
         if (!myEmpId) return;
-
-        if (oData && oData.employeeId && oData.employeeId !== myEmpId) {
-          return;
-        }
-
+        if (oData && oData.employeeId && oData.employeeId !== myEmpId) return;
         this._refreshOwnLeaveData();
       } catch (e) {
         // no-op
       }
+    },
+
+    /* ===================== Manager Message dialog ===================== */
+
+    /** Fallback when no manager comments exist */
+    __mmFallback: function (s) {
+      if (s && String(s).trim()) return s;
+      return "No message from manager yet.";
+    },
+
+    /** Open Manager Message dialog from Actions → View */
+    onOpenManagerMessage: function (oEvent) {
+      const ctx = oEvent.getSource().getBindingContext("leaveRequests") || oEvent.getSource().getBindingContext();
+      if (!ctx) {
+        return sap.m.MessageToast.show("No request selected.");
+      }
+
+      const sFragId = this.getView().getId() + "--managerMessageFrag";
+
+      if (!this._pManagerMsgDlg) {
+       // Employee.controller.js
+            this._pManagerMsgDlg = Fragment.load({
+              name: "lmsui5.view.ManagerMessageDialog", // ✅ matches /view/ path
+              controller: this,
+              id: sFragId
+            }).then(function (oDialog) {
+              this.getView().addDependent(oDialog);
+              return oDialog;
+            }.bind(this)).catch(function (e) {
+              console.error("ManagerMessageDialog load failed:", e);
+              MessageBox.error(e.message || "Failed to open the message dialog.");
+            });
+
+      }
+
+      this._pManagerMsgDlg.then(function (oDialog) {
+        oDialog.setBindingContext(ctx, "leaveRequests");
+        oDialog.open();
+      });
+    },
+
+    onCloseManagerMessage: function () {
+      if (this._pManagerMsgDlg) {
+        this._pManagerMsgDlg.then(function (oDialog) {
+          oDialog.close();
+        });
+      }
+    },
+
+    onManagerMessageLiveChange: function () {
+      // reserved (TextArea is read-only)
+    },
+
+    onCopyManagerMessage: function () {
+      const sFragId = this.getView().getId() + "--managerMessageFrag";
+      const oTA = Fragment.byId(sFragId, "mmText");
+      const text = oTA?.getValue() || "";
+
+      if (!navigator.clipboard) {
+        try {
+          const temp = document.createElement("textarea");
+          temp.value = text; temp.style.position = "fixed"; temp.style.left = "-9999px";
+          document.body.appendChild(temp); temp.select(); document.execCommand("copy");
+          document.body.removeChild(temp);
+          MessageToast.show("Message copied");
+        } catch (e) {
+          MessageBox.information("Copy not available on this browser.");
+        }
+        return;
+      }
+
+      navigator.clipboard.writeText(text).then(
+        () => MessageToast.show("Message copied"),
+        () => MessageBox.information("Copy not available on this browser.")
+      );
     }
 
   });

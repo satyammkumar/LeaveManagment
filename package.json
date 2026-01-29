@@ -39,7 +39,7 @@
         "db": {
           "kind": "hana"
         },
-        "auth": "mocked"
+        "auth": "xsuaa"
       }
     }
   },

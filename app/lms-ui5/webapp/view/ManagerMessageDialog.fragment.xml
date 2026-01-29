@@ -1,0 +1,80 @@
+<core:FragmentDefinition
+  xmlns="sap.m"
+  xmlns:core="sap.ui.core"
+  xmlns:f="sap.ui.layout.form">
+
+  <Dialog
+    type="Message"
+    contentWidth="560px"
+    stretchOnPhone="true"
+    title="Manager Message">
+
+    <!-- ✅ FIX: Bar uses contentMiddle/contentRight, no default children -->
+    <customHeader>
+      <Bar>
+        <contentMiddle>
+          <Title text="Manager Message"/>
+        </contentMiddle>
+        <contentRight>
+          <ObjectStatus
+            text="{leaveRequests>status}"
+            state="{ path: 'leaveRequests>status', formatter: '.formatStatusState' }"
+            class="sapUiTinyMarginEnd"/>
+        </contentRight>
+      </Bar>
+    </customHeader>
+
+    <content>
+      <VBox class="sapUiSmallMargin" width="100%">
+
+        <f:SimpleForm
+          editable="false"
+          layout="ResponsiveGridLayout"
+          labelSpanXL="3" labelSpanL="3" labelSpanM="4" labelSpanS="12"
+          adjustLabelSpan="false"
+          emptySpanXL="0" emptySpanL="0" emptySpanM="0" emptySpanS="0"
+          columnsXL="2" columnsL="2" columnsM="1" singleContainerFullSize="false">
+
+    
+
+          <Label text="Decision Time" visible="{= !!${leaveRequests>approvedAt} }"/>
+          <Text text="{ path: 'leaveRequests>approvedAt', formatter: '.formatDateTime' }"
+                visible="{= !!${leaveRequests>approvedAt} }"/>
+
+          <Label text="Leave Type"/>
+          <Text text="{leaveRequests>leaveType}" />
+
+          <Label text="Period"/>
+          <Text text="{
+            parts: [
+              {path:'leaveRequests>startDate'},
+              {path:'leaveRequests>endDate'}
+            ],
+            formatter: '.formatDateRange'
+          }"/>
+
+          <Label text="Days"/>
+          <Text text="{leaveRequests>daysRequested}" />
+        </f:SimpleForm>
+
+        <Title text="Message" level="H5" class="sapUiSmallMarginTop"/>
+        <TextArea
+          id="mmText"
+          width="80%"
+          rows="6"
+          editable="false"
+          value="{
+            path: 'leaveRequests>managerComments',
+            formatter: '.__mmFallback'
+          }"
+          placeholder="No message from manager yet."
+          liveChange=".onManagerMessageLiveChange"/>
+      </VBox>
+    </content>
+
+    
+    <endButton>
+      <Button text="Close" press=".onCloseManagerMessage"/>
+    </endButton>
+  </Dialog>
+</core:FragmentDefinition>

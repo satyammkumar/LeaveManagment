@@ -1,4 +1,3 @@
-
 <mvc:View
   controllerName="lmsui5.controller.Register"
   xmlns:mvc="sap.ui.core.mvc"
@@ -8,38 +7,67 @@
   <App id="app2">
     <Page id="registerPage" showHeader="false" backgroundDesign="Solid">
       <content>
-        <VBox width="100%" height="100%" alignItems="Center" justifyContent="Center" class="login__viewport">
-          <VBox class="login__card login__form" width="auto">
-            <Title text="Create Account" class="login__title"/>
-            <Text text="Fill in your details to register " class="login__subtitle"/>
 
-            <!-- Error Message Strip -->
-            <MessageStrip
-              id="registerMsg"
-              type="Error"
-              showIcon="true"
-              visible="false"
-              class="sapUiTinyMarginTop"/>
+        <!-- Split Container -->
+        <HBox width="100%" height="100%" class="login-wrapper">
 
-            <!-- Form Fields -->
-            <Input id="firstName" placeholder="First Name" value="{register>/firstName}" valueLiveUpdate="true"/>
-            <Input id="lastName" placeholder="Last Name" value="{register>/lastName}" valueLiveUpdate="true"/>
-            <Input id="email" placeholder="Email Address" type="Email" value="{register>/email}" valueLiveUpdate="true"/>
+          <!-- LEFT BLUE BACKGROUND AREA -->
+          <VBox width="60%" height="100%" class="login-left-bg"></VBox>
 
-            <!-- NEW: Manager ID -->
-            <Input id="managerId" placeholder="Manager ID" value="{register>/managerId}" valueLiveUpdate="true"/>
+          <!-- Optional thin divider (visual seam) -->
+          <VBox width="1px" height="100%" class="login-divider"></VBox>
 
-            <Input id="pass" placeholder="Password (min 6 characters)" type="Password" value="{register>/password}" valueLiveUpdate="true"/>
-            <Input id="confirmPassword" placeholder="Confirm Password" type="Password" value="{register>/confirmPassword}" valueLiveUpdate="true"/>
+          <!-- RIGHT: Centered Card -->
+          <VBox width="40%" height="100%" alignItems="Center" justifyContent="Center">
+            <VBox class="login-card" width="70%">
 
-            <!-- Actions -->
-            <HBox class="login__actions sapUiSmallMarginTop" justifyContent="SpaceBetween" width="100%">
-              <Button id="btnBackToLogin" text="Back to Login" type="Transparent" press=".onBackToLogin"/>
-              <Button id="Register" text="Register" type="Emphasized" press=".onRegister"/>
-            </HBox>
+              <!-- Card header -->
+              <Title text="Create Account" class="login-title"/>
+              <Text text="Fill in your details to register" class="login-subtitle"/>
+
+              <!-- Error Message Strip -->
+              <MessageStrip
+                id="registerMsg"
+                type="Error"
+                showIcon="true"
+                visible="false"
+                class="sapUiTinyMarginTop"/>
+
+              <!-- Form Fields -->
+              <Input id="firstName" placeholder="First Name"
+                     value="{register>/firstName}" valueLiveUpdate="true"
+                     class="sapUiSmallMarginTop"/>
+              <Input id="lastName" placeholder="Last Name"
+                     value="{register>/lastName}" valueLiveUpdate="true"
+                     class="sapUiTinyMarginTop"/>
+              <Input id="email" placeholder="Email Address" type="Email"
+                     value="{register>/email}" valueLiveUpdate="true"
+                     class="sapUiTinyMarginTop"/>
+
+              <!-- Manager ID -->
+              <Input id="managerId" placeholder="Manager ID"
+                     value="{register>/managerId}" valueLiveUpdate="true"
+                     class="sapUiTinyMarginTop"/>
+
+              <Input id="pass" placeholder="Password (min 6 characters)" type="Password"
+                     value="{register>/password}" valueLiveUpdate="true"
+                     class="sapUiTinyMarginTop"/>
+              <Input id="confirmPassword" placeholder="Confirm Password" type="Password"
+                     value="{register>/confirmPassword}" valueLiveUpdate="true"
+                     class="sapUiTinyMarginTop"/>
+
+              <!-- Actions -->
+              <HBox class="login-actions sapUiSmallMarginTop" justifyContent="SpaceBetween" width="100%">
+                <Button id="btnBackToLogin" text="Back to Login" type="Transparent" press=".onBackToLogin"/>
+                <Button id="Register" text="Register" type="Emphasized" width="110px" press=".onRegister"/>
+              </HBox>
+
+            </VBox>
           </VBox>
-        </VBox>
+        </HBox>
+
       </content>
     </Page>
   </App>
+
 </mvc:View>

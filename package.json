@@ -13,14 +13,7 @@
     "bcryptjs": "^3.0.3",
     "express": "^4"
   },
-  "devDependencies": {
-    "@cap-js/sqlite": "^2",
-    "@sap/cds-dk": "^9",
-    "@sap/hdi-deploy": "^4",
-    "cds-plugin-ui5": "^0.13.0",
-    "mbt": "^1.2.29",
-    "rimraf": "^5.0.5"
-  },
+  
   "scripts": {
     "start": "cds-serve",
     "build": "rimraf resources mta_archives && mbt build --mtar archive",
@@ -39,7 +32,7 @@
         "db": {
           "kind": "hana"
         },
-        "auth": "xsuaa"
+        "auth": "mocked"
       }
     }
   },

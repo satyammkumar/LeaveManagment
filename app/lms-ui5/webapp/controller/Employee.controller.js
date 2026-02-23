@@ -13,25 +13,24 @@ sap.ui.define([
   return Controller.extend("lmsui5.controller.Employee", {
 
     onInit: function () {
-      // Ensure 'user' model exists
       if (!this.getOwnerComponent().getModel("user")) {
         this.getOwnerComponent().setModel(new JSONModel({}), "user");
       }
 
-      // Transient model for Apply Leave dialog
       this.getView().setModel(new JSONModel(this._buildApplyLeaveModelData()), "applyLeave");
 
-      // My Leave Requests model
       this.getView().setModel(new JSONModel({
         requests: [],
         counts: { total: 0, pending: 0, approved: 0, rejected: 0 }
       }), "leaveRequests");
 
-      // Route → load employee data by email
+      // ✅ CHANGED: Track which request IDs we've already alerted on, so we
+      // don't re-show the rejection popup on every refresh
+      this._alreadyNotifiedIds = new Set();
+
       const oRouter = this.getOwnerComponent().getRouter();
       oRouter.getRoute("Employee").attachPatternMatched(this._onRouteMatched, this);
 
-      // After show → apply OData filter and refresh data
       this.getView().addEventDelegate({
         onAfterShow: function () {
           this._applyEmployeeFilter();
@@ -39,7 +38,7 @@ sap.ui.define([
         }.bind(this)
       });
 
-      // Subscribe to leave changes
+      // Subscribe to leave changes published by Manager
       this._bus = sap.ui.getCore().getEventBus();
       this._bus.subscribe("leave", "changed", this._onLeaveChanged, this);
     },
@@ -62,7 +61,6 @@ sap.ui.define([
       }
     },
 
-    /** Load employee profile by email */
     getEmployeeData: async function (sUsername) {
       const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailPattern.test(sUsername)) {
@@ -110,8 +108,6 @@ sap.ui.define([
 
         MessageToast.show("Employee data loaded successfully");
         this._applyEmployeeFilter();
-
-        // Load my leave requests
         this._loadMyLeaveRequests();
 
       } catch (err) {
@@ -124,7 +120,6 @@ sap.ui.define([
       MessageToast.show(sMessage, { duration: 3000 });
     },
 
-    /** Route handler — receives email */
     _onRouteMatched: function (oEvent) {
       const oArgs = oEvent.getParameter("arguments");
       const sUsername = oArgs.username;
@@ -135,15 +130,15 @@ sap.ui.define([
       }
 
       if (sUsername) {
+        // ✅ CHANGED: Reset notification tracking on fresh route match (new session)
+        this._alreadyNotifiedIds = new Set();
         this.getEmployeeData(sUsername);
       }
     },
 
-    /** Apply OData filter on balancesTable for current employee */
     _applyEmployeeFilter: function () {
       const oUserModel = this.getOwnerComponent().getModel("user");
       const sEmpId = oUserModel && oUserModel.getProperty("/employeeId");
-
       const oBinding = this.byId("balancesTable")?.getBinding("items");
       if (!oBinding) return;
 
@@ -174,7 +169,6 @@ sap.ui.define([
       if (sEmpId) {
         aFilters.push(new Filter("employee/employeeId", FilterOperator.EQ, sEmpId));
       }
-
       if (sQuery) {
         aFilters.push(new Filter({
           filters: [
@@ -202,29 +196,21 @@ sap.ui.define([
       this._loadMyLeaveRequests();
     },
 
-    /** Logout */
     onLogout: function () {
-      var that = this;
-
       sap.m.MessageBox.confirm("Are you sure you want to logout?", {
         actions: [sap.m.MessageBox.Action.OK, sap.m.MessageBox.Action.CANCEL],
         emphasizedAction: sap.m.MessageBox.Action.OK,
-        onClose: function (sAction) {
-          if (sAction !== sap.m.MessageBox.Action.OK) { return; }
-
+        onClose: (sAction) => {
+          if (sAction !== sap.m.MessageBox.Action.OK) return;
           try { sessionStorage.clear(); } catch (e) {}
           try { localStorage.clear(); } catch (e) {}
-
-          if (sap.ushell && sap.ushell.Container) {
-            try {
-              window.location.hash = "#Shell-home";
-              return;
-            } catch (e) {}
+          if (sap.ushell?.Container) {
+            window.location.hash = "#Shell-home";
+            return;
           }
-
-          var oComp = that.getOwnerComponent && that.getOwnerComponent();
-          var oRouter = oComp && oComp.getRouter && oComp.getRouter();
-          if (oRouter && oRouter.navTo) {
+          const oComp = this.getOwnerComponent?.();
+          const oRouter = oComp?.getRouter?.();
+          if (oRouter?.navTo) {
             oRouter.navTo("Login", {}, true);
             return;
           }
@@ -233,7 +219,6 @@ sap.ui.define([
       });
     },
 
-    // Status formatter
     formatBalanceState: function (v) {
       const n = Number(v);
       if (isNaN(n)) return "None";
@@ -252,7 +237,6 @@ sap.ui.define([
       }
     },
 
-    // Date formatters
     formatDateRange: function (sStart, sEnd) {
       if (!sStart && !sEnd) return "";
       try {
@@ -275,7 +259,6 @@ sap.ui.define([
       }
     },
 
-    /** Load my leave requests from CAP action */
     _loadMyLeaveRequests: async function () {
       const oUserModel = this.getOwnerComponent().getModel("user");
       const sEmployeeId = oUserModel?.getProperty("/employeeId");
@@ -304,36 +287,99 @@ sap.ui.define([
         oRequestsModel.setProperty("/requests", requests);
         oRequestsModel.setProperty("/counts", counts);
 
-        this._checkForRejectionNotifications(requests);
+        return requests; // ✅ CHANGED: return requests so callers can use them
       } catch (err) {
         console.error("Failed to load leave requests:", err);
+        return [];
       }
     },
 
-    // Optional alert for new rejections
-    _checkForRejectionNotifications: function (requests) {
-      const rejectedRequests = requests.filter(r => r.status === "Rejected" && r.managerComments);
-      if (rejectedRequests.length > 0) {
-        const latestRejection = rejectedRequests[0];
-        MessageBox.warning(
-          latestRejection.managerComments || "No reason provided by manager",
-          {
-            title: "Leave Request Rejected",
-            details: `Leave Type: ${latestRejection.leaveType}\nPeriod: ${this.formatDateRange(latestRejection.startDate, latestRejection.endDate)}\nDays: ${latestRejection.daysRequested}`,
-            actions: [MessageBox.Action.OK, "View All Requests"],
-            emphasizedAction: MessageBox.Action.OK,
-            onClose: (sAction) => {
-              if (sAction === "View All Requests") {
-                const oRequestsTable = this.byId("myRequestsTable");
-                if (oRequestsTable) {
-                  oRequestsTable.getDomRef()?.scrollIntoView({ behavior: "smooth" });
-                }
-              }
-            }
-          }
-        );
+    /**
+     * ✅ CHANGED: Only show notification for requests not yet notified.
+     * Accepts optional `sChangeType` ("approved" | "rejected") to show targeted message.
+     */
+  _checkForRejectionNotifications: function (requests, sTargetRequestId) {
+  let newRejections;
+
+  if (sTargetRequestId) {
+    // Manager just rejected a specific request — find only that one
+    // Don't filter on _alreadyNotifiedIds here because this IS a fresh rejection
+    newRejections = requests.filter(r =>
+      r.id === sTargetRequestId &&
+      r.status === "Rejected"
+    );
+  } else {
+    // Fallback (bulk reject without specific ID): find all unseen rejections
+    newRejections = requests.filter(r =>
+      r.status === "Rejected" &&
+      r.managerComments &&
+      r.id &&
+      !this._alreadyNotifiedIds.has(r.id)
+    );
+  }
+
+  if (newRejections.length === 0) return;
+
+  // Mark as notified to prevent re-showing on subsequent refreshes
+  newRejections.forEach(r => this._alreadyNotifiedIds.add(r.id));
+
+  const rejection = newRejections[0];
+  const sComment = (rejection.managerComments || "").trim() || "No reason provided by manager.";
+
+  MessageBox.error(
+    sComment,
+    {
+      title: "Leave Request Rejected",
+      details: [
+        "Leave Type: " + (rejection.leaveType || ""),
+        "Period: " + this.formatDateRange(rejection.startDate, rejection.endDate),
+        "Days: " + rejection.daysRequested,
+        "Submitted: " + this.formatDateTime(rejection.submittedAt)
+      ].join("\n"),
+      actions: [MessageBox.Action.OK, "View My Requests"],
+      emphasizedAction: MessageBox.Action.OK,
+      onClose: (sAction) => {
+        if (sAction === "View My Requests") {
+          this.byId("myRequestsTable")
+            ?.getDomRef()
+            ?.scrollIntoView({ behavior: "smooth" });
+        }
       }
-    },
+    }
+  );
+},
+
+    /**
+     * ✅ CHANGED: Also show approval notification, and pass changeType to
+     * _checkForRejectionNotifications so it only triggers on manager-initiated changes.
+     */
+   _onLeaveChanged: async function (sChannel, sEvent, oData) {
+  try {
+    const myEmpId = this.getOwnerComponent().getModel("user")?.getProperty("/employeeId");
+    if (!myEmpId) return;
+
+    // If a specific employeeId is given and it's not us, skip
+    if (oData && oData.employeeId && oData.employeeId !== myEmpId) return;
+
+    // Only react to manager-initiated changes (not our own submissions looping back)
+    const isManagerChange = oData && oData.source === "manager";
+
+    // Refresh all leave data so the model gets the latest managerComments from DB
+    const requests = await this._refreshOwnLeaveData();
+
+    if (isManagerChange && oData.change === "approved") {
+      MessageToast.show("Your leave request has been approved!");
+
+    } else if (isManagerChange && oData.change === "rejected") {
+      // ✅ Pass the specific requestId from the EventBus payload
+      // so we show the comment for exactly the request that was just rejected
+      this._checkForRejectionNotifications(requests || [], oData.requestId || null);
+    }
+
+  } catch (e) {
+    console.error("_onLeaveChanged error:", e);
+  }
+},
 
     // ===== Full details dialog (row press) =====
     onViewRequestDetails: function (oEvent) {
@@ -345,7 +391,7 @@ sap.ui.define([
 
       if (!this._pRequestDetailsDlg) {
         this._pRequestDetailsDlg = Fragment.load({
-          name: "lmsui5.view.RequestDetail",  // <-- file: view/RequestDetail.fragment.xml
+          name: "lmsui5.view.RequestDetail",
           controller: this,
           id: sFragId
         }).then(function (oDialog) {
@@ -365,9 +411,7 @@ sap.ui.define([
 
     onCloseRequestDetails: function () {
       if (this._pRequestDetailsDlg) {
-        this._pRequestDetailsDlg.then(function (oDialog) {
-          oDialog.close();
-        });
+        this._pRequestDetailsDlg.then(function (oDialog) { oDialog.close(); });
       }
     },
 
@@ -380,7 +424,7 @@ sap.ui.define([
 
       if (!this._pApplyLeaveDlg) {
         this._pApplyLeaveDlg = Fragment.load({
-          name: "lmsui5.view.ApplyLeave", // file: view/ApplyLeave.fragment.xml
+          name: "lmsui5.view.ApplyLeave",
           controller: this,
           id: sFragId
         }).then(function (oDialog) {
@@ -424,10 +468,8 @@ sap.ui.define([
       if (oRange) {
         const start = oRange.getStartDate();
         const end = oRange.getEndDate() || start;
-
         const startISO = this._toISODate(start);
         const endISO = this._toISODate(end);
-
         const aBusinessISO = this._expandBusinessDates(start, end);
         const businessDays = aBusinessISO.length;
 
@@ -451,7 +493,6 @@ sap.ui.define([
       }
     },
 
-    /** Submit leave */
     onSubmitLeave: async function () {
       const oApply = this.getView().getModel("applyLeave");
       const sEmployeeId = this.getOwnerComponent().getModel("user")?.getProperty("/employeeId");
@@ -461,12 +502,8 @@ sap.ui.define([
       const sEnd   = oApply.getProperty("/endDateISO");
       const sReason = (oApply.getProperty("/reason") || "").trim();
 
-      if (!sLeaveType) {
-        return MessageBox.warning("Please select a leave type.");
-      }
-      if (!sStart || !sEnd) {
-        return MessageBox.warning("Please select a valid date range.");
-      }
+      if (!sLeaveType) return MessageBox.warning("Please select a leave type.");
+      if (!sStart || !sEnd) return MessageBox.warning("Please select a valid date range.");
 
       try {
         const oModel = this.getView().getModel();
@@ -480,7 +517,6 @@ sap.ui.define([
 
         MessageToast.show("Leave application submitted.");
         this.onCancelApplyLeave();
-
         await this._refreshOwnLeaveData();
 
         sap.ui.getCore().getEventBus().publish("leave", "changed", {
@@ -496,6 +532,7 @@ sap.ui.define([
     },
 
     // ============== helpers for dates ==============
+
     _buildApplyLeaveModelData: function () {
       return {
         selectedLeaveType: "",
@@ -573,20 +610,18 @@ sap.ui.define([
       const d = new Date(start.getFullYear(), start.getMonth(), start.getDate());
       const last = new Date(end.getFullYear(), end.getMonth(), end.getDate());
       while (d <= last) {
-        if (!this._isWeekend(d)) {
-          out.push(this._toISODate(d));
-        }
+        if (!this._isWeekend(d)) out.push(this._toISODate(d));
         d.setDate(d.getDate() + 1);
       }
       return out;
     },
 
-    /** Centralized refresh */
+    /** ✅ CHANGED: Returns the loaded requests so _onLeaveChanged can use them */
     _refreshOwnLeaveData: async function () {
       const balBinding = this.byId("balancesTable")?.getBinding("items");
       balBinding?.refresh();
 
-      await this._loadMyLeaveRequests();
+      const requests = await this._loadMyLeaveRequests();
 
       try {
         const username = this.getOwnerComponent().getModel("auth")?.getProperty("/username");
@@ -607,29 +642,17 @@ sap.ui.define([
       } catch (e) {
         // silent
       }
-    },
 
-    /** Refresh only for this employee on EventBus */
-    _onLeaveChanged: function (sChannel, sEvent, oData) {
-      try {
-        const myEmpId = this.getOwnerComponent().getModel("user")?.getProperty("/employeeId");
-        if (!myEmpId) return;
-        if (oData && oData.employeeId && oData.employeeId !== myEmpId) return;
-        this._refreshOwnLeaveData();
-      } catch (e) {
-        // no-op
-      }
+      return requests; // ✅ CHANGED: return so callers can check
     },
 
     /* ===================== Manager Message dialog ===================== */
 
-    /** Fallback when no manager comments exist */
     __mmFallback: function (s) {
       if (s && String(s).trim()) return s;
       return "No message from manager yet.";
     },
 
-    /** Open Manager Message dialog from Actions → View */
     onOpenManagerMessage: function (oEvent) {
       const ctx = oEvent.getSource().getBindingContext("leaveRequests") || oEvent.getSource().getBindingContext();
       if (!ctx) {
@@ -639,19 +662,17 @@ sap.ui.define([
       const sFragId = this.getView().getId() + "--managerMessageFrag";
 
       if (!this._pManagerMsgDlg) {
-       // Employee.controller.js
-            this._pManagerMsgDlg = Fragment.load({
-              name: "lmsui5.view.ManagerMessageDialog", // ✅ matches /view/ path
-              controller: this,
-              id: sFragId
-            }).then(function (oDialog) {
-              this.getView().addDependent(oDialog);
-              return oDialog;
-            }.bind(this)).catch(function (e) {
-              console.error("ManagerMessageDialog load failed:", e);
-              MessageBox.error(e.message || "Failed to open the message dialog.");
-            });
-
+        this._pManagerMsgDlg = Fragment.load({
+          name: "lmsui5.view.ManagerMessageDialog",
+          controller: this,
+          id: sFragId
+        }).then(function (oDialog) {
+          this.getView().addDependent(oDialog);
+          return oDialog;
+        }.bind(this)).catch(function (e) {
+          console.error("ManagerMessageDialog load failed:", e);
+          MessageBox.error(e.message || "Failed to open the message dialog.");
+        });
       }
 
       this._pManagerMsgDlg.then(function (oDialog) {
@@ -662,9 +683,7 @@ sap.ui.define([
 
     onCloseManagerMessage: function () {
       if (this._pManagerMsgDlg) {
-        this._pManagerMsgDlg.then(function (oDialog) {
-          oDialog.close();
-        });
+        this._pManagerMsgDlg.then(function (oDialog) { oDialog.close(); });
       }
     },
 
@@ -689,7 +708,6 @@ sap.ui.define([
         }
         return;
       }
-
       navigator.clipboard.writeText(text).then(
         () => MessageToast.show("Message copied"),
         () => MessageBox.information("Copy not available on this browser.")

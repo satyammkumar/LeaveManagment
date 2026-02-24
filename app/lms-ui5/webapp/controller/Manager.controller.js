@@ -49,15 +49,12 @@ sap.ui.define([
         oModel.setSizeLimit(10000);
       }
 
-      // ✅ CHANGED: Get EventBus reference on init
       this._bus = sap.ui.getCore().getEventBus();
 
       this._loadLeaveTypes();
     },
 
-    // ✅ CHANGED: Unsubscribe on exit (good practice)
     onExit: function () {
-      // Nothing to unsubscribe here since Manager only publishes, not subscribes
     },
 
     // ==================== LOOKUP LOADERS ====================
@@ -302,7 +299,7 @@ sap.ui.define([
       if (oBinding?.refresh) {
         oBinding.refresh();
       }
-      MessageToast.show("Data refreshed");
+      MessageToast.show("Leaves Rejected");
     },
 
     _applyFilters: function () {
@@ -507,7 +504,6 @@ onRejectOne: function (oEvent) {
       MessageBox.confirm(`Approve leave request for ${sEmployeeName}?`, {
         onClose: (sAction) => {
           if (sAction === MessageBox.Action.OK) {
-            // ✅ CHANGED: pass employee ID
             const sEmpId = oData.employee_employeeId || oData.employeeId || "";
             this._approveRequest(oData.ID || oData.id, sEmpId);
             oPopover.close();
@@ -538,7 +534,7 @@ onRejectOne: function (oEvent) {
         return;
       }
 
-      // ✅ CHANGED: also capture employeeId per request for EventBus
+      // capture employeeId per request for EventBus
       const aRequests = aSelectedItems.map(item => {
         const ctx = item.getBindingContext();
         const obj = ctx.getObject();
@@ -565,7 +561,7 @@ onRejectOne: function (oEvent) {
         return;
       }
 
-      // ✅ CHANGED: also capture employeeId per request
+      // capture employeeId per request
       const aRequests = aSelectedItems.map(item => {
         const ctx = item.getBindingContext();
         const oData = ctx.getObject();
@@ -616,8 +612,7 @@ _openRejectDialog: function (oData) {
       oViewModel.setProperty("/rejectData/commentLength", 0);
       oViewModel.setProperty("/rejectData/bulkRequests", aRequests);
       oViewModel.setProperty("/rejectData/isBulk", true);
-      // ✅ CHANGED: clear single employeeId for bulk (handled per-request in _rejectMultipleRequests)
-      oViewModel.setProperty("/rejectData/employeeId", "");
+      oViewModel.setProperty("/rejectData/employeeId", "");   // clear single employeeId for bulk
 
       this.byId("rejectCommentDialog")?.open();
     },
@@ -639,7 +634,7 @@ _openRejectDialog: function (oData) {
       if (oRejectData.isBulk) {
         this._rejectMultipleRequests(oRejectData.bulkRequests, oRejectData.comments);
       } else {
-        // ✅ CHANGED: pass employeeId through to _rejectRequest
+        // pass employeeId through to _rejectRequest
         this._rejectRequest(oRejectData.requestId, oRejectData.comments, oRejectData.employeeId);
       }
 
@@ -649,6 +644,9 @@ _openRejectDialog: function (oData) {
     onCancelReject: function () {
       this.byId("rejectCommentDialog")?.close();
     },
+
+
+
 // ==================== BACKEND CALLS ====================
 
 /**
@@ -681,7 +679,7 @@ _approveRequest: async function (sRequestId, sEmployeeId) {
 
     MessageToast.show("Leave request approved successfully");
 
-    // Publish to EventBus so Employee view refreshes
+    //  Employee view refreshes
     this._bus.publish("leave", "changed", {
       employeeId: sEmployeeId || "",
       source: "manager",
@@ -699,7 +697,7 @@ _approveRequest: async function (sRequestId, sEmployeeId) {
 },
 
 /**
- * Reject a leave request — uses fetch (V4 compatible)
+ * Reject a leave request 
  */
 _rejectRequest: async function (sRequestId, sComments, sEmployeeId) {
   const sApproverId = this._getApproverId();
@@ -728,7 +726,7 @@ _rejectRequest: async function (sRequestId, sComments, sEmployeeId) {
 
     MessageToast.show("Leave request rejected successfully");
 
-    // Publish to EventBus so Employee view refreshes
+    //Employee view refreshes
     this._bus.publish("leave", "changed", {
       employeeId: sEmployeeId || "",
       source: "manager",
@@ -747,7 +745,7 @@ _rejectRequest: async function (sRequestId, sComments, sEmployeeId) {
 },
 
 /**
- * Approve multiple requests — uses fetch (V4 compatible)
+ * Approve multiple requests 
  */
 _approveMultipleRequests: async function (aRequests) {
   const sApproverId = this._getApproverId();
@@ -803,7 +801,7 @@ _approveMultipleRequests: async function (aRequests) {
 },
 
 /**
- * Reject multiple requests — uses fetch (V4 compatible)
+ * Reject multiple requests 
  */
 _rejectMultipleRequests: async function (aRequests, sComments) {
   const sApproverId = this._getApproverId();
@@ -910,7 +908,6 @@ loadRequestsForEmployee: async function (employeeID) {
  * Replace "MANAGER001" with real session lookup once available
  */
 _getApproverId: function () {
-  // Try to get from user model first
   const oUserModel = this.getOwnerComponent()?.getModel("user");
   const empId = oUserModel?.getProperty("/employeeId");
   return empId || "MANAGER001";

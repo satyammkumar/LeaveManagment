@@ -34,7 +34,7 @@
           <Text text="{leaveRequests>reason}" wrapping="true"/>
         </VBox>
 
-        <!-- Manager Comments (shown only if status is Approved or Rejected) -->
+        <!-- Manager Comments -->
         <VBox visible="{= ${leaveRequests>status} === 'Approved' || ${leaveRequests>status} === 'Rejected' }">
           <Label text="Manager Comments" class="sapUiTinyMarginBottom"/>
           <MessageStrip
@@ -45,7 +45,7 @@
           </MessageStrip>
         </VBox>
 
-        <!-- Approved By and Date (if approved or rejected) -->
+        <!-- Approved By and Date -->
         <l:VerticalLayout 
           visible="{= ${leaveRequests>status} === 'Approved' || ${leaveRequests>status} === 'Rejected' }">
           <ObjectAttribute title="Approved By" text="{leaveRequests>approvedBy}"/>

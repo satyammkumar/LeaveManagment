@@ -11,7 +11,7 @@ sap.ui.define(
 
     return Controller.extend("lmsui5.controller.Register", {
       onInit: function () {
-        // Initialize register form model with proper binding
+        // Register form model with proper binding
         const oRegisterModel = new JSONModel({
           firstName: "",
           lastName: "",
@@ -22,7 +22,7 @@ sap.ui.define(
         });
         this.getView().setModel(oRegisterModel, "register");
 
-        // Router hook: reset form when route is matched
+        // Reset form when route is matched
         const oRouter = this.getOwnerComponent().getRouter();
         oRouter
           .getRoute("Register")
@@ -34,7 +34,6 @@ sap.ui.define(
         });
       },
 
-      /** Setup Enter key to move between fields using UI5's event delegate */
       _setupEnterKeyNavigation: function () {
         const that = this;
 
@@ -48,7 +47,6 @@ sap.ui.define(
           "confirmPassword",
         ];
 
-        // Clean up previous delegates to avoid duplicates on rerender
         aFieldIds.forEach((fieldId) => {
           const oField = this.byId(fieldId);
           if (oField && oField._enterDelegate) {
@@ -66,13 +64,13 @@ sap.ui.define(
           oBtnRegister._enterDelegate = null;
         }
 
-        // Attach fresh onsapenter delegates in display order
+        // Onsapenter delegates 
         aFieldIds.forEach((fieldId, index) => {
           const oField = this.byId(fieldId);
           if (oField) {
             const oDelegate = {
               onsapenter: function () {
-                // Move to next field, else focus Register button
+                
                 if (index < aFieldIds.length - 1) {
                   const oNextField = that.byId(aFieldIds[index + 1]);
                   oNextField && oNextField.focus && oNextField.focus();
@@ -114,24 +112,24 @@ sap.ui.define(
         const oMsg = this.byId("registerMsg");
         oMsg && oMsg.setVisible(false);
 
-        // Focus the first field for convenience
+        // Focus the first field 
         const oFirst = this.byId("firstName");
         oFirst && oFirst.focus && oFirst.focus();
       },
 
-      /** Navigate back to Login */
+      // Navigate back to Login 
       onBackToLogin: function () {
         this.getOwnerComponent().getRouter().navTo("Login");
       },
 
-      /** Submit registration */
+      // Submit registration 
       onRegister: async function () {
         const oRegisterModel = this.getView().getModel("register");
         const oData = oRegisterModel.getData();
         const oMsg = this.byId("registerMsg");
         const oBtnRegister = this.byId("Register");
 
-        // Client-side Validation
+        // Validation
         if (!oData.firstName?.trim()) {
           this._showError(oMsg, "Please enter first name");
           return;
@@ -169,7 +167,7 @@ sap.ui.define(
           oBtnRegister.setEnabled(false);
         }
 
-        // Show busy indicator
+        // Busy Indicator
         BusyIndicator.show(0);
 
         try {
@@ -182,7 +180,7 @@ sap.ui.define(
             password: "***",
           });
 
-          // Prepare request body
+          //  Request body
           const requestBody = {
             firstName: oData.firstName.trim(),
             lastName: oData.lastName.trim(),

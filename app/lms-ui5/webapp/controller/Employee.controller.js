@@ -24,8 +24,7 @@ sap.ui.define([
         counts: { total: 0, pending: 0, approved: 0, rejected: 0 }
       }), "leaveRequests");
 
-      // ✅ CHANGED: Track which request IDs we've already alerted on, so we
-      // don't re-show the rejection popup on every refresh
+      //  CHANGED: Track which request IDs we've already alerted on, so we
       this._alreadyNotifiedIds = new Set();
 
       const oRouter = this.getOwnerComponent().getRouter();
@@ -130,7 +129,7 @@ sap.ui.define([
       }
 
       if (sUsername) {
-        // ✅ CHANGED: Reset notification tracking on fresh route match (new session)
+        // Reset notification tracking on fresh route match (new session)
         this._alreadyNotifiedIds = new Set();
         this.getEmployeeData(sUsername);
       }
@@ -191,7 +190,7 @@ sap.ui.define([
       const oBinding = this.byId("balancesTable")?.getBinding("items");
       if (oBinding) {
         oBinding.refresh();
-        MessageToast.show("Data refreshed");
+        MessageToast.show("Leave Rejected");
       }
       this._loadMyLeaveRequests();
     },
@@ -287,7 +286,7 @@ sap.ui.define([
         oRequestsModel.setProperty("/requests", requests);
         oRequestsModel.setProperty("/counts", counts);
 
-        return requests; // ✅ CHANGED: return requests so callers can use them
+        return requests; 
       } catch (err) {
         console.error("Failed to load leave requests:", err);
         return [];
@@ -295,21 +294,18 @@ sap.ui.define([
     },
 
     /**
-     * ✅ CHANGED: Only show notification for requests not yet notified.
-     * Accepts optional `sChangeType` ("approved" | "rejected") to show targeted message.
+     * Only show notification for requests not yet notified.
      */
   _checkForRejectionNotifications: function (requests, sTargetRequestId) {
   let newRejections;
 
   if (sTargetRequestId) {
-    // Manager just rejected a specific request — find only that one
-    // Don't filter on _alreadyNotifiedIds here because this IS a fresh rejection
     newRejections = requests.filter(r =>
       r.id === sTargetRequestId &&
       r.status === "Rejected"
     );
   } else {
-    // Fallback (bulk reject without specific ID): find all unseen rejections
+    // (bulk reject without specific ID)
     newRejections = requests.filter(r =>
       r.status === "Rejected" &&
       r.managerComments &&
@@ -320,7 +316,6 @@ sap.ui.define([
 
   if (newRejections.length === 0) return;
 
-  // Mark as notified to prevent re-showing on subsequent refreshes
   newRejections.forEach(r => this._alreadyNotifiedIds.add(r.id));
 
   const rejection = newRejections[0];
@@ -350,28 +345,24 @@ sap.ui.define([
 },
 
     /**
-     * ✅ CHANGED: Also show approval notification, and pass changeType to
-     * _checkForRejectionNotifications so it only triggers on manager-initiated changes.
+     * Also show approval notification, and pass changeType to
      */
    _onLeaveChanged: async function (sChannel, sEvent, oData) {
   try {
     const myEmpId = this.getOwnerComponent().getModel("user")?.getProperty("/employeeId");
     if (!myEmpId) return;
 
-    // If a specific employeeId is given and it's not us, skip
     if (oData && oData.employeeId && oData.employeeId !== myEmpId) return;
 
-    // Only react to manager-initiated changes (not our own submissions looping back)
     const isManagerChange = oData && oData.source === "manager";
 
-    // Refresh all leave data so the model gets the latest managerComments from DB
     const requests = await this._refreshOwnLeaveData();
 
     if (isManagerChange && oData.change === "approved") {
       MessageToast.show("Your leave request has been approved!");
 
     } else if (isManagerChange && oData.change === "rejected") {
-      // ✅ Pass the specific requestId from the EventBus payload
+      // Pass the specific requestId from the EventBus payload
       // so we show the comment for exactly the request that was just rejected
       this._checkForRejectionNotifications(requests || [], oData.requestId || null);
     }
@@ -616,7 +607,7 @@ sap.ui.define([
       return out;
     },
 
-    /** ✅ CHANGED: Returns the loaded requests so _onLeaveChanged can use them */
+    /** Returns the loaded requests so _onLeaveChanged can use them */
     _refreshOwnLeaveData: async function () {
       const balBinding = this.byId("balancesTable")?.getBinding("items");
       balBinding?.refresh();
@@ -640,10 +631,9 @@ sap.ui.define([
           }
         }
       } catch (e) {
-        // silent
       }
 
-      return requests; // ✅ CHANGED: return so callers can check
+      return requests; 
     },
 
     /* ===================== Manager Message dialog ===================== */
@@ -687,9 +677,6 @@ sap.ui.define([
       }
     },
 
-    onManagerMessageLiveChange: function () {
-      // reserved (TextArea is read-only)
-    },
 
     onCopyManagerMessage: function () {
       const sFragId = this.getView().getId() + "--managerMessageFrag";

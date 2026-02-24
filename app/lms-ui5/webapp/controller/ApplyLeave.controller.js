@@ -1,5 +1,4 @@
 
-// Controller of the view that opens the Apply Leave dialog
 sap.ui.define([
   "sap/ui/core/mvc/Controller",
   "sap/ui/model/json/JSONModel",
@@ -14,18 +13,18 @@ sap.ui.define([
     onInit: function () {
       // JSON model to hold dialog state
       var oApplyLeaveModel = new JSONModel({
-        selectedLeaveType: "", // LeaveType.code (business key)
-        selectedDates: [],     // array of JS Date objects
+        selectedLeaveType: "", 
+        selectedDates: [],    
         reason: "",
-        minDate: null,         // optional: bind from backend
-        maxDate: null          // optional: bind from backend
+        minDate: null,         
+        maxDate: null         
       });
       this.getView().setModel(oApplyLeaveModel, "applyLeave");
 
       this._oDateFmt = DateFormat.getDateInstance({ pattern: "yyyy-MM-dd" });
     },
 
-    // Collect selected dates from sap.ui.unified.Calendar
+    // Collect dates sap.ui.unified.Calendar
     onCalendarSelect: function () {
       var oCal = this.byId("leaveCalendar");
       var aRanges = oCal.getSelectedDates() || [];
@@ -33,7 +32,7 @@ sap.ui.define([
 
       aRanges.forEach(function (oRange) {
         var dStart = oRange.getStartDate();
-        var dEnd = oRange.getEndDate(); // null for non-interval selection
+        var dEnd = oRange.getEndDate(); 
         if (dStart && dEnd) {
           var d = new Date(dStart);
           d.setHours(0, 0, 0, 0);
@@ -49,7 +48,7 @@ sap.ui.define([
         }
       });
 
-      // Deduplicate + sort
+      // Deduplicate 
       var mSeen = {};
       aDates = aDates.filter(function (d) {
         var k = d.toDateString();
@@ -70,13 +69,10 @@ sap.ui.define([
 
     /**
      * Helper: fetch LeaveType ID (UUID) by business key 'code'
-     * because your schema uses composite keys and you must send both:
-     *  - leaveType_ID (UUID)
-     *  - leaveType_code (String(10))
+      
      */
     _fetchLeaveTypeByCode: async function (sCode) {
       const oModel = this.getView().getModel();
-      // Query list with $filter (safe for composite keys)
       const oList = oModel.bindList("/LeaveTypes", null, null, null, {
         $select: "ID,code",
         $filter: "code eq '" + String(sCode).replace(/'/g, "''") + "'"
@@ -92,18 +88,18 @@ sap.ui.define([
     onSubmitLeave: async function () {
       const oView = this.getView();
       const oApply = oView.getModel("applyLeave");
-      const oModel = oView.getModel();        // OData V4 model
+      const oModel = oView.getModel();        
       const oAuth  = this.getOwnerComponent().getModel("auth");
 
       // From UI
-      const sLeaveCode = oApply.getProperty("/selectedLeaveType"); // LeaveType.code
+      const sLeaveCode = oApply.getProperty("/selectedLeaveType"); 
       const aDates     = oApply.getProperty("/selectedDates") || [];
       const sReason    = oApply.getProperty("/reason") || "";
 
       // From auth (must contain both cuid UUID and business key)
       const oUser = (oAuth && oAuth.getProperty("/user")) || {};
-      const sEmpUUID = oUser.id;           // Employee.ID (cuid UUID)
-      const sEmpCode = oUser.employeeID;   // Employee.employeeId (String(10))
+      const sEmpUUID = oUser.id;           
+      const sEmpCode = oUser.employeeID;   
 
       // Validation
       if (!sLeaveCode) {
@@ -119,27 +115,25 @@ sap.ui.define([
         return;
       }
 
-      // Compute start/end (sorted)
+      // start/end
       const aSorted = aDates.slice().sort((a, b) => a - b);
       const sStart = this._toYMD(aSorted[0]);
       const sEnd   = this._toYMD(aSorted[aSorted.length - 1]);
 
       try {
-        // Fetch LeaveType UUID by code (composite FKs require both)
+        // Fetch LeaveType UUID by code
         const oLeaveType = await this._fetchLeaveTypeByCode(sLeaveCode);
 
-        // Build payload — DO NOT send daysRequested/submittedAt (server computes)
+        // Build payload 
         const oPayload = {
-          // Employee composite FK
           employee_ID: sEmpUUID,
           employee_employeeId: sEmpCode,
 
-          // LeaveType composite FK
           leaveType_ID: oLeaveType.id,
           leaveType_code: oLeaveType.code,
 
-          startDate: sStart,   // "YYYY-MM-DD"
-          endDate:   sEnd,     // "YYYY-MM-DD"
+          startDate: sStart,   
+          endDate:   sEnd,     
           reason:    sReason,
           status:    "Pending"
         };
@@ -148,18 +142,13 @@ sap.ui.define([
         const oListBinding = oModel.bindList("/LeaveRequests");
         const oContext = oListBinding.create(oPayload);
 
-        await oContext.created(); // throws on error
+        await oContext.created(); 
         const oCreated = oContext.getObject();
         const sNewId = oCreated && (oCreated.ID || oCreated.ID_cuid || oCreated.ID_uuid);
 
         MessageToast.show("Leave submitted successfully.");
-
-        // After submit: navigate (choose one)
-        // Option A: go to Manager dashboard (as you requested earlier)
+        // Go to Manager dashboard 
         this.getOwnerComponent().getRouter().navTo("ManagerNoId");
-        // Option B: stay on employee page / close dialog:
-        // this.byId("applyLeaveDialog")?.close();
-
       } catch (e) {
         var sMsg = "Failed to submit leave request.";
         if (e && e.message) sMsg += "\n" + e.message;

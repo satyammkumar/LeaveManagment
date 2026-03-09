@@ -67,9 +67,6 @@ module.exports = cds.service.impl(async function () {
     }
   }
 
-  // ✅ FIX: Helper to resolve requestId safely
-  // The frontend sends 'id' (lowercase string from leaveRequests action)
-  // but the entity key is 'ID' (UUID). This handles both cases.
   function resolveRequestId(requestId) {
     if (!requestId) return null;
     const s = String(requestId).trim();
@@ -77,7 +74,7 @@ module.exports = cds.service.impl(async function () {
     return s;
   }
 
-  // HOOKS ON LEAVE REQUESTS
+  // HOOKS ON LEAVE REQUESTS 
 
   this.before("CREATE", LeaveRequests, async (req) => {
     const tx = cds.transaction(req);
@@ -96,9 +93,7 @@ module.exports = cds.service.impl(async function () {
     }
 
     const leaveType = await tx.run(SELECT.one.from(LeaveTypes).where({ code: leaveType_code }));
-    if (!leaveType) {
-      req.reject(400, "Invalid leave type.");
-    }
+    if (!leaveType) req.reject(400, "Invalid leave type.");
     if (leaveType.maxDays && Number(leaveType.maxDays) > 0 && daysRequested > Number(leaveType.maxDays)) {
       req.reject(400, `Requested days (${daysRequested}) exceed maxDays (${leaveType.maxDays}).`);
     }
@@ -115,7 +110,6 @@ module.exports = cds.service.impl(async function () {
     req.data.daysRequested = daysRequested;
     req.data.submittedAt = new Date();
     if (!req.data.status) req.data.status = "Pending";
-
     if (!req.data.empname) {
       req.data.empname = await getEmployeeName(tx, employee_employeeId);
     }
@@ -126,10 +120,7 @@ module.exports = cds.service.impl(async function () {
     if (data.status === "Approved") {
       await UPDATE(LeaveBalances)
         .set({ usedDays: { "+=": data.daysRequested } })
-        .where({
-          employee_employeeId: data.employee_employeeId,
-          leaveType_code: data.leaveType_code,
-        });
+        .where({ employee_employeeId: data.employee_employeeId, leaveType_code: data.leaveType_code });
     }
   });
 
@@ -149,8 +140,8 @@ module.exports = cds.service.impl(async function () {
     const arr = Array.isArray(rows) ? rows : (rows ? [rows] : []);
     for (const each of arr) {
       const accrued = Number(each.accruedDays || 0);
-      const used = Number(each.usedDays || 0);
-      each.balance = accrued - used;
+      const used    = Number(each.usedDays    || 0);
+      each.balance  = accrued - used;
     }
   });
 
@@ -162,8 +153,7 @@ module.exports = cds.service.impl(async function () {
     const employee = await tx.run(SELECT.one.from(Employees).where({ employeeId }));
     if (!employee) req.reject(400, "Invalid employee.");
 
-    const empName = await getEmployeeName(tx, employeeId);
-
+    const empName   = await getEmployeeName(tx, employeeId);
     const leaveType = await tx.run(SELECT.one.from(LeaveTypes).where({ code: leaveTypeCode }));
     if (!leaveType) req.reject(400, "Invalid leave type.");
 
@@ -171,13 +161,11 @@ module.exports = cds.service.impl(async function () {
 
     const entry = {
       employee_employeeId: employeeId,
-      leaveType_code: leaveTypeCode,
-      startDate,
-      endDate,
-      daysRequested,
-      reason: (reason || "").trim(),
-      status: "Pending",
-      empname: empName,
+      leaveType_code:      leaveTypeCode,
+      startDate, endDate, daysRequested,
+      reason:  (reason || "").trim(),
+      status:  "Pending",
+      empname: empName
     };
 
     let created;
@@ -185,127 +173,67 @@ module.exports = cds.service.impl(async function () {
       const res = await tx.run(INSERT.into(LeaveRequests).entries(entry).returning("*"));
       created = Array.isArray(res) ? res[0] : res;
     } catch (e) {
-      const ins = await tx.run(INSERT.into(LeaveRequests).entries(entry));
+      const ins       = await tx.run(INSERT.into(LeaveRequests).entries(entry));
       const createdId = ins?.ID || ins?.ID_cuid || ins?.ID_uuid;
       created = createdId
         ? await tx.run(SELECT.one.from(LeaveRequests).where({ ID: createdId }))
         : await tx.run(
-          SELECT.one.from(LeaveRequests)
-            .where({ employee_employeeId: employeeId, leaveType_code: leaveTypeCode, startDate, endDate })
-            .orderBy({ submittedAt: "desc" })
-        );
+            SELECT.one.from(LeaveRequests)
+              .where({ employee_employeeId: employeeId, leaveType_code: leaveTypeCode, startDate, endDate })
+              .orderBy({ submittedAt: "desc" })
+          );
     }
-
     if (created) created.empName = empName;
     return created;
   });
 
-  // ✅ FIX: approveLeaveRequest - robust ID resolution with detailed logging
+  // ACTION: approveLeaveRequest 
   this.on("approveLeaveRequest", async (req) => {
     const tx = cds.transaction(req);
     const { requestId, approverId, comments } = req.data;
-
-    // ✅ Log what we received so we can debug ID mismatches
-    console.log("[approveLeaveRequest] received requestId:", requestId, "type:", typeof requestId);
-
     const resolvedId = resolveRequestId(requestId);
-    if (!resolvedId) {
-      console.error("[approveLeaveRequest] requestId is empty or invalid:", requestId);
-      return req.reject(400, "Request ID is required.");
-    }
+    if (!resolvedId) return req.reject(400, "Request ID is required.");
 
-    // ✅ Try to find the request — log the result so we know if it's found
     const request = await tx.run(SELECT.one.from(LeaveRequests).where({ ID: resolvedId }));
-    console.log("[approveLeaveRequest] found request:", request ? `status=${request.status}` : "NOT FOUND");
+    if (!request) return req.reject(400, `Leave request not found for ID: ${resolvedId}`);
+    if (request.status !== "Pending") return req.reject(400, `Request is already ${request.status}.`);
 
-    if (!request) {
-      return req.reject(400, `Leave request not found for ID: ${resolvedId}`);
-    }
-    if (request.status !== "Pending") {
-      return req.reject(400, `Request is already ${request.status}. Only Pending requests can be approved.`);
-    }
+    await tx.run(UPDATE(LeaveRequests).set({
+      status: "Approved", approvedAt: new Date(),
+      approvedBy: approverId || null, managerComments: comments || null
+    }).where({ ID: resolvedId }));
 
-    await tx.run(
-      UPDATE(LeaveRequests)
-        .set({
-          status: "Approved",
-          approvedAt: new Date(),
-          approvedBy: approverId || null,
-          managerComments: comments || null
-        })
-        .where({ ID: resolvedId })
-    );
+    await tx.run(INSERT.into(Approvals).entries({
+      leaveRequest_ID: resolvedId, approverId, status: "Approved", comments, approvedAt: new Date()
+    }));
 
-    await tx.run(
-      INSERT.into(Approvals).entries({
-        leaveRequest_ID: resolvedId,
-        approverId,
-        status: "Approved",
-        comments,
-        approvedAt: new Date()
-      })
-    );
+    await tx.run(UPDATE(LeaveBalances)
+      .set({ usedDays: { "+=": request.daysRequested } })
+      .where({ employee_employeeId: request.employee_employeeId, leaveType_code: request.leaveType_code }));
 
-    await tx.run(
-      UPDATE(LeaveBalances)
-        .set({ usedDays: { "+=": request.daysRequested } })
-        .where({
-          employee_employeeId: request.employee_employeeId,
-          leaveType_code: request.leaveType_code
-        })
-    );
-
-    console.log("[approveLeaveRequest] successfully approved:", resolvedId);
     return await tx.run(SELECT.one.from(LeaveRequests).where({ ID: resolvedId }));
   });
 
-  // ✅ FIX: rejectLeaveRequest - robust ID resolution with detailed logging
+  // ACTION: rejectLeaveRequest 
   this.on("rejectLeaveRequest", async (req) => {
     const tx = cds.transaction(req);
     const { requestId, approverId, comments } = req.data;
-
-    // ✅ Log what we received so we can debug ID mismatches
-    console.log("[rejectLeaveRequest] received requestId:", requestId, "type:", typeof requestId);
-
     const resolvedId = resolveRequestId(requestId);
-    if (!resolvedId) {
-      console.error("[rejectLeaveRequest] requestId is empty or invalid:", requestId);
-      return req.reject(400, "Request ID is required.");
-    }
+    if (!resolvedId) return req.reject(400, "Request ID is required.");
 
-    // ✅ Try to find the request — log the result
     const request = await tx.run(SELECT.one.from(LeaveRequests).where({ ID: resolvedId }));
-    console.log("[rejectLeaveRequest] found request:", request ? `status=${request.status}` : "NOT FOUND");
+    if (!request) return req.reject(400, `Leave request not found for ID: ${resolvedId}`);
+    if (request.status !== "Pending") return req.reject(400, `Request is already ${request.status}.`);
 
-    if (!request) {
-      return req.reject(400, `Leave request not found for ID: ${resolvedId}`);
-    }
-    if (request.status !== "Pending") {
-      return req.reject(400, `Request is already ${request.status}. Only Pending requests can be rejected.`);
-    }
+    await tx.run(UPDATE(LeaveRequests).set({
+      status: "Rejected", approvedAt: new Date(),
+      approvedBy: approverId || null, managerComments: comments || null
+    }).where({ ID: resolvedId }));
 
-    await tx.run(
-      UPDATE(LeaveRequests)
-        .set({
-          status: "Rejected",
-          approvedAt: new Date(),
-          approvedBy: approverId || null,
-          managerComments: comments || null
-        })
-        .where({ ID: resolvedId })
-    );
+    await tx.run(INSERT.into(Approvals).entries({
+      leaveRequest_ID: resolvedId, approverId, status: "Rejected", comments, approvedAt: new Date()
+    }));
 
-    await tx.run(
-      INSERT.into(Approvals).entries({
-        leaveRequest_ID: resolvedId,
-        approverId,
-        status: "Rejected",
-        comments,
-        approvedAt: new Date()
-      })
-    );
-
-    console.log("[rejectLeaveRequest] successfully rejected:", resolvedId);
     return await tx.run(SELECT.one.from(LeaveRequests).where({ ID: resolvedId }));
   });
 
@@ -313,9 +241,6 @@ module.exports = cds.service.impl(async function () {
   this.on("cancelLeaveRequest", async (req) => {
     const tx = cds.transaction(req);
     const { requestId, cancellerId, comments } = req.data;
-
-    console.log("[cancelLeaveRequest] received requestId:", requestId);
-
     const resolvedId = resolveRequestId(requestId);
     if (!resolvedId) return req.reject(400, "Request ID is required.");
 
@@ -326,60 +251,41 @@ module.exports = cds.service.impl(async function () {
     }
 
     await tx.run(UPDATE(LeaveRequests).set({ status: "Cancelled" }).where({ ID: resolvedId }));
-
-    await tx.run(
-      INSERT.into(Approvals).entries({
-        leaveRequest_ID: resolvedId,
-        approverId: cancellerId || null,
-        status: "Cancelled",
-        comments: comments || null,
-        approvedAt: new Date()
-      })
-    );
+    await tx.run(INSERT.into(Approvals).entries({
+      leaveRequest_ID: resolvedId, approverId: cancellerId || null,
+      status: "Cancelled", comments: comments || null, approvedAt: new Date()
+    }));
 
     if (request.status === "Approved") {
-      await tx.run(
-        UPDATE(LeaveBalances)
-          .set({ usedDays: { "-=": request.daysRequested } })
-          .where({
-            employee_employeeId: request.employee_employeeId,
-            leaveType_code: request.leaveType_code
-          })
-      );
+      await tx.run(UPDATE(LeaveBalances)
+        .set({ usedDays: { "-=": request.daysRequested } })
+        .where({ employee_employeeId: request.employee_employeeId, leaveType_code: request.leaveType_code }));
     }
-
     return await tx.run(SELECT.one.from(LeaveRequests).where({ ID: resolvedId }));
   });
 
-  // ACTION: login
+  // ACTION: login 
   this.on("login", async (req) => {
     const tx = cds.transaction(req);
     const { email, password } = req.data;
-
-    if (!email || !password) {
-      return { success: false, message: "Email and password are required", employee: null };
-    }
+    if (!email || !password) return { success: false, message: "Email and password are required", employee: null };
 
     try {
       const emp = await tx.run(SELECT.one.from(Employees).where({ email }));
       if (!emp) return { success: false, message: "Invalid email or password", employee: null };
 
-      const isPasswordValid = await bcrypt.compare(password, emp.password);
-      if (!isPasswordValid) {
-        return { success: false, message: "Invalid email or password", employee: null };
-      }
+      const valid = await bcrypt.compare(password, emp.password);
+      if (!valid) return { success: false, message: "Invalid email or password", employee: null };
 
-      const designation = emp.designation || "Employee";
       return {
-        success: true,
-        message: "Login successful",
+        success: true, message: "Login successful",
         employee: {
-          employeeID: String(emp.employeeId),
-          firstName: emp.firstName || "",
-          lastName: emp.lastName || "",
-          email: emp.email || "",
-          department: emp.department || "",
-          designation
+          employeeID:  String(emp.employeeId),
+          firstName:   emp.firstName  || "",
+          lastName:    emp.lastName   || "",
+          email:       emp.email      || "",
+          department:  emp.department || "",
+          designation: emp.designation || "Employee"
         }
       };
     } catch (error) {
@@ -391,84 +297,46 @@ module.exports = cds.service.impl(async function () {
   // ACTION: register
   this.on('register', async (req) => {
     const { firstName, lastName, email, password, managerId } = req.data;
-
-    console.log('[register] Request received:', { firstName, lastName, email });
-
-    if (!firstName || !lastName || !email || !password) {
-      return req.reject(400, 'Missing required fields');
-    }
-    if (password.length < 6) {
-      return req.reject(400, 'Password must be at least 6 characters');
-    }
-
-    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailPattern.test(email)) {
-      return req.reject(400, 'Invalid email address');
-    }
+    if (!firstName || !lastName || !email || !password) return req.reject(400, 'Missing required fields');
+    if (password.length < 6) return req.reject(400, 'Password must be at least 6 characters');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return req.reject(400, 'Invalid email address');
 
     const tx = cds.transaction(req);
-
     try {
-      const existingEmp = await tx.run(SELECT.one.from(Employees).where({ email }));
-      if (existingEmp) {
+      if (await tx.run(SELECT.one.from(Employees).where({ email }))) {
         return req.reject(409, 'User with this email already exists');
       }
 
-      const lastEmployee = await tx.run(
-        SELECT.one.from(Employees).orderBy({ employeeId: 'desc' })
-      );
-
+      const last = await tx.run(SELECT.one.from(Employees).orderBy({ employeeId: 'desc' }));
       let employeeId = 'E1001';
-      if (lastEmployee && lastEmployee.employeeId) {
-        const currentId = lastEmployee.employeeId;
-        const numericPart = parseInt(currentId.replace(/[^0-9]/g, ''), 10);
-        if (!isNaN(numericPart)) {
-          employeeId = 'E' + String(numericPart + 1).padStart(currentId.length - 1, '0');
-        }
+      if (last?.employeeId) {
+        const n = parseInt(last.employeeId.replace(/[^0-9]/g, ''), 10);
+        if (!isNaN(n)) employeeId = 'E' + String(n + 1).padStart(last.employeeId.length - 1, '0');
       }
 
       const hashedPassword = await bcrypt.hash(password, 10);
-
-      await tx.run(
-        INSERT.into(Employees).entries({
-          employeeId, firstName, lastName, email,
-          department: 'General',
-          password: hashedPassword,
-          managerId: managerId || null
-        })
-      );
+      await tx.run(INSERT.into(Employees).entries({
+        employeeId, firstName, lastName, email,
+        department: 'General', password: hashedPassword, managerId: managerId || null
+      }));
 
       const employee = await tx.run(SELECT.one.from(Employees).where({ email }));
       if (!employee) return req.reject(500, 'Failed to create employee');
 
       try {
         const leaveTypes = await tx.run(SELECT.from(LeaveTypes));
-        if (leaveTypes && leaveTypes.length > 0) {
-          const balanceEntries = leaveTypes.map(lt => ({
-            employee_ID: employee.ID,
-            leaveType_ID: lt.ID,
-            accruedDays: 0,
-            usedDays: 0,
-            balance: 0
-          }));
-          await tx.run(INSERT.into(LeaveBalances).entries(balanceEntries));
+        if (leaveTypes?.length) {
+          await tx.run(INSERT.into(LeaveBalances).entries(
+            leaveTypes.map(lt => ({ employee_ID: employee.ID, leaveType_ID: lt.ID, accruedDays: 0, usedDays: 0, balance: 0 }))
+          ));
         }
-      } catch (e) {
-        console.warn('[register] Leave balance initialization failed:', e.message);
-      }
+      } catch (e) { console.warn('[register] Leave balance init failed:', e.message); }
 
       await tx.commit();
-
       return {
-        success: true,
-        message: 'Registered successfully. Please log in.',
+        success: true, message: 'Registered successfully. Please log in.',
         employeeId,
-        employee: {
-          employeeID: String(employee.employeeId),
-          firstName: employee.firstName,
-          lastName: employee.lastName,
-          email: employee.email
-        }
+        employee: { employeeID: String(employee.employeeId), firstName: employee.firstName, lastName: employee.lastName, email: employee.email }
       };
     } catch (e) {
       console.error('[register] Error:', e);
@@ -477,7 +345,7 @@ module.exports = cds.service.impl(async function () {
     }
   });
 
-  // ACTION: getEmployeeData
+  // ACTION: getEmployeeData 
   this.on("getEmployeeData", async (req) => {
     const tx = cds.transaction(req);
     const { email } = req.data;
@@ -493,25 +361,40 @@ module.exports = cds.service.impl(async function () {
           .where({ employee_employeeId: employee.employeeId })
       );
 
-      const leaveBalances = (balances || []).map(b => ({
-        id: String(b.ID),
-        accruedDays: Number(b.accruedDays || 0),
-        usedDays: Number(b.usedDays || 0),
-        balance: Number(b.accruedDays || 0) - Number(b.usedDays || 0),
-        leaveTypeCode: b.leaveType_code || ""
-      }));
+      const leaveTypes    = await tx.run(SELECT.from(LeaveTypes));
+      const leaveTypeMap  = {};
+      (leaveTypes || []).forEach(lt => {
+        leaveTypeMap[lt.code] = { description: lt.description || lt.code, maxDays: Number(lt.maxDays || 0), isPaid: lt.isPaid || false };
+      });
+
+      const leaveBalances = (balances || []).map(b => {
+        const accrued = Number(b.accruedDays || 0);
+        const used    = Number(b.usedDays    || 0);
+        const balance = accrued - used;
+        const ltInfo  = leaveTypeMap[b.leaveType_code] || {};
+        return {
+          id:                   String(b.ID),
+          leaveTypeCode:        b.leaveType_code || "",
+          leaveTypeDescription: ltInfo.description || b.leaveType_code || "",
+          isPaid:               ltInfo.isPaid  || false,
+          maxDays:              ltInfo.maxDays || 0,
+          accruedDays:          accrued,
+          usedDays:             used,
+          balance,
+          availableDays:        Math.max(0, balance)
+        };
+      });
 
       return {
-        success: true,
-        message: "Employee data retrieved successfully",
+        success: true, message: "Employee data retrieved successfully",
         employee: {
-          id: String(employee.employeeId),
+          id:         String(employee.employeeId),
           employeeID: String(employee.employeeId),
-          firstName: employee.firstName,
-          lastName: employee.lastName,
-          email: employee.email,
+          firstName:  employee.firstName,
+          lastName:   employee.lastName,
+          email:      employee.email,
           department: employee.department,
-          managerID: employee.managerId || ""
+          managerID:  employee.managerId || ""
         },
         leaveBalances
       };
@@ -521,108 +404,176 @@ module.exports = cds.service.impl(async function () {
     }
   });
 
-  // ACTION: getEmployeeLeaveBalance
+  // ACTION: getEmployeeLeaveBalance 
   this.on("getEmployeeLeaveBalance", async (req) => {
     const tx = cds.transaction(req);
     const { employeeID } = req.data;
-
-    if (!employeeID) {
-      return { success: false, message: "Employee ID is required", balances: [], count: 0 };
-    }
+    if (!employeeID) return { success: false, message: "Employee ID is required", balances: [], count: 0 };
 
     try {
-      const balances = await tx.run(
-        SELECT.from(LeaveBalances).where({ employee_employeeId: employeeID })
-      );
-
+      const balances   = await tx.run(SELECT.from(LeaveBalances).where({ employee_employeeId: employeeID }));
       const leaveTypes = await tx.run(SELECT.from(LeaveTypes));
-      const leaveTypeMap = {};
-      (leaveTypes || []).forEach(lt => {
-        leaveTypeMap[lt.code] = lt.description || lt.code;
-      });
+      const ltMap      = {};
+      (leaveTypes || []).forEach(lt => { ltMap[lt.code] = lt.description || lt.code; });
 
-      const formattedBalances = (balances || []).map(b => ({
-        id: String(b.ID),
-        leaveType: leaveTypeMap[b.leaveType_code] || b.leaveType_code,
+      const formatted = (balances || []).map(b => ({
+        id:          String(b.ID),
+        leaveType:   ltMap[b.leaveType_code] || b.leaveType_code,
         accruedDays: Number(b.accruedDays || 0),
-        usedDays: Number(b.usedDays || 0),
-        balance: Number(b.accruedDays || 0) - Number(b.usedDays || 0)
+        usedDays:    Number(b.usedDays    || 0),
+        balance:     Number(b.accruedDays || 0) - Number(b.usedDays || 0)
       }));
 
-      return {
-        success: true,
-        message: `Retrieved ${formattedBalances.length} balance(s)`,
-        balances: formattedBalances,
-        count: formattedBalances.length
-      };
+      return { success: true, message: `Retrieved ${formatted.length} balance(s)`, balances: formatted, count: formatted.length };
     } catch (error) {
       console.error("getEmployeeLeaveBalance error:", error);
       return { success: false, message: "An error occurred retrieving leave balances", balances: [], count: 0 };
     }
   });
 
-  // ACTION: leaveRequests
+  // ACTION: leaveRequests 
   this.on("leaveRequests", async (req) => {
     const tx = cds.transaction(req);
     const { employeeID } = req.data;
-
-    if (!employeeID) {
-      return { success: false, message: "Employee ID is required", requests: [], count: 0 };
-    }
+    if (!employeeID) return { success: false, message: "Employee ID is required", requests: [], count: 0 };
 
     try {
       const requests = await tx.run(
         SELECT.from(LeaveRequests)
-          .columns(
-            "ID", "empname", "employee_employeeId",
-            "leaveType_code", "startDate", "endDate",
-            "daysRequested", "reason", "status",
-            "submittedAt", "approvedBy", "approvedAt", "managerComments"
-          )
+          .columns("ID","empname","employee_employeeId","leaveType_code","startDate","endDate",
+                   "daysRequested","reason","status","submittedAt","approvedBy","approvedAt","managerComments")
           .where({ employee_employeeId: employeeID })
           .orderBy({ submittedAt: "desc" })
       );
 
-      const leaveTypes = await tx.run(SELECT.from(LeaveTypes).columns("code", "description"));
-      const leaveTypeMap = {};
-      (leaveTypes || []).forEach(lt => {
-        leaveTypeMap[lt.code] = lt.description || lt.code;
-      });
+      const leaveTypes = await tx.run(SELECT.from(LeaveTypes).columns("code","description"));
+      const ltMap = {};
+      (leaveTypes || []).forEach(lt => { ltMap[lt.code] = lt.description || lt.code; });
 
-      const formattedRequests = [];
+      const formatted = [];
       for (const r of requests || []) {
         let empname = r.empname;
-        if (!empname || empname === r.employee_employeeId) {
-          empname = await getEmployeeName(tx, r.employee_employeeId);
-        }
-
-        formattedRequests.push({
-          id: String(r.ID),
+        if (!empname || empname === r.employee_employeeId) empname = await getEmployeeName(tx, r.employee_employeeId);
+        formatted.push({
+          id:              String(r.ID),
           empname,
-          employeeId: r.employee_employeeId || "",
-          leaveType: leaveTypeMap[r.leaveType_code] || r.leaveType_code,
-          leaveTypeCode: r.leaveType_code,
-          startDate: r.startDate,
-          endDate: r.endDate,
-          daysRequested: Number(r.daysRequested || 0),
-          reason: r.reason || "",
-          status: r.status || "Pending",
-          submittedAt: r.submittedAt,
-          approvedBy: r.approvedBy || "",
-          approvedAt: r.approvedAt || null,
+          employeeId:      r.employee_employeeId || "",
+          leaveType:       ltMap[r.leaveType_code] || r.leaveType_code,
+          leaveTypeCode:   r.leaveType_code,
+          startDate:       r.startDate,
+          endDate:         r.endDate,
+          daysRequested:   Number(r.daysRequested || 0),
+          reason:          r.reason || "",
+          status:          r.status || "Pending",
+          submittedAt:     r.submittedAt,
+          approvedBy:      r.approvedBy   || "",
+          approvedAt:      r.approvedAt   || null,
           managerComments: r.managerComments || ""
         });
       }
 
-      return {
-        success: true,
-        message: `Retrieved ${formattedRequests.length} leave request(s)`,
-        requests: formattedRequests,
-        count: formattedRequests.length
-      };
+      return { success: true, message: `Retrieved ${formatted.length} leave request(s)`, requests: formatted, count: formatted.length };
     } catch (error) {
       console.error("leaveRequests error:", error);
       return { success: false, message: "An error occurred retrieving leave requests", requests: [], count: 0 };
     }
   });
+
+  this.on("assignLeaveBalance", async (req) => {
+    const tx = cds.transaction(req);
+    const { employeeId, earnedDays, optionalDays } = req.data;
+
+    // Validate inputs 
+    if (!employeeId || String(employeeId).trim() === "") {
+      return req.reject(400, "employeeId is required.");
+    }
+    const iEarned   = Number(earnedDays   || 0);
+    const iOptional = Number(optionalDays || 0);
+    if (iEarned < 0 || iOptional < 0) {
+      return req.reject(400, "Days cannot be negative.");
+    }
+    if (iEarned + iOptional < 1) {
+      return req.reject(400, "At least 1 day must be assigned.");
+    }
+
+    const sEmpId = String(employeeId).trim();
+
+    // Verify employee exists 
+    const employee = await tx.run(SELECT.one.from(Employees).where({ employeeId: sEmpId }));
+    if (!employee) {
+      return req.reject(404, `Employee with ID "${sEmpId}" not found.`);
+    }
+
+    
+    const EARNED_CODE   = "EL";
+    const OPTIONAL_CODE = "OL";
+
+    const allLeaveTypes = await tx.run(SELECT.from(LeaveTypes).columns("ID", "code", "description"));
+    const ltMap = {};
+    (allLeaveTypes || []).forEach(lt => { ltMap[lt.code] = lt; });
+
+    const upsertBalance = async (leaveTypeCode, days) => {
+      if (days <= 0) return; 
+
+      const lt = ltMap[leaveTypeCode];
+      if (!lt) {
+        console.warn(`[assignLeaveBalance] Leave type code "${leaveTypeCode}" not found in LeaveTypes. Skipping.`);
+        return;
+      }
+
+      const existing = await tx.run(
+        SELECT.one.from(LeaveBalances)
+          .where({ employee_employeeId: sEmpId, leaveType_code: leaveTypeCode })
+      );
+
+      if (existing) {
+        await tx.run(
+          UPDATE(LeaveBalances)
+            .set({ accruedDays: { "+=": days } })
+            .where({ employee_employeeId: sEmpId, leaveType_code: leaveTypeCode })
+        );
+        console.log(`[assignLeaveBalance] Updated ${sEmpId} / ${leaveTypeCode}: +${days} days (was ${existing.accruedDays})`);
+      } else {
+        await tx.run(
+          INSERT.into(LeaveBalances).entries({
+            employee_ID:           employee.ID,
+            employee_employeeId:   sEmpId,
+            leaveType_ID:          lt.ID,
+            leaveType_code:        leaveTypeCode,
+            accruedDays:           days,
+            usedDays:              0,
+            balance:               days
+          })
+        );
+        console.log(`[assignLeaveBalance] Inserted ${sEmpId} / ${leaveTypeCode}: ${days} days`);
+      }
+    };
+
+    await upsertBalance(EARNED_CODE,   iEarned);
+    await upsertBalance(OPTIONAL_CODE, iOptional);
+
+  
+    const updatedBalances = await tx.run(
+      SELECT.from(LeaveBalances)
+        .where({ employee_employeeId: sEmpId })
+    );
+
+    const result = (updatedBalances || []).map(b => ({
+      leaveTypeCode: b.leaveType_code,
+      accruedDays:   Number(b.accruedDays || 0),
+      usedDays:      Number(b.usedDays    || 0),
+      balance:       Number(b.accruedDays || 0) - Number(b.usedDays || 0)
+    }));
+
+    return {
+      success:     true,
+      message:     `Leave balance assigned successfully for employee ${sEmpId}.`,
+      employeeId:  sEmpId,
+      earnedDays:  iEarned,
+      optionalDays: iOptional,
+      totalDays:   iEarned + iOptional,
+      balances:    result
+    };
+  });
+
 });

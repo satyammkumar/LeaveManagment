@@ -24,8 +24,6 @@ sap.ui.define([
           }
         });
       }
-
-      // Enter in Password → trigger onLogin
       if (oPassword) {
         oPassword.addEventDelegate({
           onsapenter: function () {
@@ -38,7 +36,6 @@ sap.ui.define([
       const oRouter = this.getOwnerComponent().getRouter();
       oRouter.getRoute("Login").attachPatternMatched(this._onLoginRouteMatched, this);
 
-      // Also reset whenever the login page is about to be shown
       this.getView().addEventDelegate({
         onBeforeShow: function () {
           this._resetLoginForm();
@@ -59,7 +56,6 @@ sap.ui.define([
     _onLoginRouteMatched: function () {
       this._resetLoginForm();
 
-      // Optional: reset auth flags
       const authModel = this.getOwnerComponent().getModel("auth");
       if (authModel) {
         authModel.setProperty("/isAuthenticated", false);

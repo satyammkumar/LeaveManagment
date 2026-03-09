@@ -29,7 +29,7 @@
           <core:Item key="{applyLeave>code}" text="{applyLeave>description}"/>
         </Select>
 
-        <!-- Calendar (Date selection) -->
+        <!-- Calendar  -->
         <Label text="Select Dates" class="sapUiSmallMarginTop"/>
         <unified:Calendar
           id="leaveCalendar"
@@ -41,7 +41,7 @@
           select=".onCalendarSelect">
         </unified:Calendar>
 
-        <!-- Optional: Show selected date count -->
+        <!-- Show selected date count -->
         <ObjectStatus
           class="sapUiSmallMarginTop"
           text="{= ${applyLeave>/selectedDates}.length ? 'Selected Days: ' + ${applyLeave>/selectedDates}.length : 'No dates selected' }"

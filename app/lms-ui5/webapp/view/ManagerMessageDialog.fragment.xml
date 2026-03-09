@@ -9,7 +9,6 @@
     stretchOnPhone="true"
     title="Manager Message">
 
-    <!-- ✅ FIX: Bar uses contentMiddle/contentRight, no default children -->
     <customHeader>
       <Bar>
         <contentMiddle>

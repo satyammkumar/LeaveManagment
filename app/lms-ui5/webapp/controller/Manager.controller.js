@@ -5,23 +5,36 @@ sap.ui.define([
   "sap/m/MessageBox",
   "sap/ui/core/format/DateFormat",
   "sap/ui/model/Filter",
-  "sap/ui/model/FilterOperator"
-], function (Controller, JSONModel, MessageToast, MessageBox, DateFormat, Filter, FilterOperator) {
+  "sap/ui/model/FilterOperator",
+  "sap/ui/model/Sorter"
+], function (Controller, JSONModel, MessageToast, MessageBox, DateFormat, Filter, FilterOperator, Sorter) {
   "use strict";
+
+  // STATUS SORT PRIORITY 
+  
+  var _statusOrder = function (status) {
+    switch ((status || "").toLowerCase()) {
+      case "pending":   return 0;
+      case "rejected":  return 1;
+      case "approved":  return 2;
+      case "cancelled": return 3;
+      default:          return 4;
+    }
+  };
 
   return Controller.extend("lmsui5.controller.Manager", {
 
-    // ==================== INITIALIZATION ====================
+    // INITIALIZATION 
 
     onInit: function () {
       const oViewModel = new JSONModel({
-        kpi: { 
-          pending: 0, 
-          approvedToday: 0, 
-          rejectedToday: 0 
+        kpi: {
+          pending: 0,
+          approvedToday: 0,
+          rejectedToday: 0
         },
-        counts: { 
-          leaveRequests: "" 
+        counts: {
+          leaveRequests: ""
         },
         leaveTypes: [],
         leaveTypeDescByCode: {},
@@ -35,14 +48,23 @@ sap.ui.define([
           isBulk: false,
           bulkRequests: []
         },
+        // Generate Leaves dialog state 
+        generateLeaves: {
+          employeeId:      "",
+          earnedDays:      0,
+          optionalDays:    0,
+          totalDays:       0,
+          empMessage:      "",
+          empMessageType:  "None"
+        },
         busy: true,
         dataLoaded: false,
         useActionFeed: false,
         lastActionEmployeeID: ""
       });
-      
+
       this.getView().setModel(oViewModel, "view");
-      this.byId("selStatus")?.setSelectedKey("Pending");
+      this.byId("selStatus")?.setSelectedKey("empty");
 
       const oModel = this.getView().getModel();
       if (oModel && oModel.setSizeLimit) {
@@ -50,14 +72,12 @@ sap.ui.define([
       }
 
       this._bus = sap.ui.getCore().getEventBus();
-
       this._loadLeaveTypes();
     },
 
-    onExit: function () {
-    },
+    onExit: function () {},
 
-    // ==================== LOOKUP LOADERS ====================
+    // LOOKUP LOADERS 
 
     _loadLeaveTypes: function () {
       const oModel = this.getView().getModel();
@@ -73,7 +93,6 @@ sap.ui.define([
         urlParameters: { $select: "code,description" },
         success: (data) => {
           const aLeaveTypes = data?.results || data?.value || [];
-
           const descByCode = {};
           const fullDescByCode = {};
 
@@ -106,30 +125,23 @@ sap.ui.define([
       try {
         const oTable = this.byId("tblRequests");
         const oBinding = oTable?.getBinding("items");
-        if (oBinding?.refresh) {
-          oBinding.refresh(true);
-        }
+        if (oBinding?.refresh) oBinding.refresh(true);
       } catch (e) {
         console.warn("Could not refresh bindings:", e.message);
       }
     },
 
-    // ==================== FORMATTERS ====================
+    // FORMATTERS 
 
     formatLeaveTypeDesc: function (code) {
       if (!code) return "";
       try {
         const oViewModel = this.getView()?.getModel("view");
         if (!oViewModel) return String(code);
-        const dataLoaded = oViewModel.getProperty("/dataLoaded");
-        if (!dataLoaded) return String(code);
+        if (!oViewModel.getProperty("/dataLoaded")) return String(code);
         const map = oViewModel.getProperty("/leaveTypeDescByCode") || {};
-        const key = String(code).trim().toUpperCase();
-        return map[key] || code;
-      } catch (e) {
-        console.error("Error in formatLeaveTypeDesc:", e);
-        return String(code);
-      }
+        return map[String(code).trim().toUpperCase()] || code;
+      } catch (e) { return String(code); }
     },
 
     formatLeaveTypeFullDesc: function (code) {
@@ -137,15 +149,10 @@ sap.ui.define([
       try {
         const oViewModel = this.getView()?.getModel("view");
         if (!oViewModel) return String(code);
-        const dataLoaded = oViewModel.getProperty("/dataLoaded");
-        if (!dataLoaded) return String(code);
+        if (!oViewModel.getProperty("/dataLoaded")) return String(code);
         const map = oViewModel.getProperty("/leaveTypeFullDescByCode") || {};
-        const key = String(code).trim().toUpperCase();
-        return map[key] || code;
-      } catch (e) {
-        console.error("Error in formatLeaveTypeFullDesc:", e);
-        return String(code);
-      }
+        return map[String(code).trim().toUpperCase()] || code;
+      } catch (e) { return String(code); }
     },
 
     formatDateRange: function (sStart, sEnd) {
@@ -153,46 +160,37 @@ sap.ui.define([
       try {
         const fmt = DateFormat.getDateInstance({ style: "medium" });
         const a = sStart ? fmt.format(new Date(sStart)) : "";
-        const b = sEnd ? fmt.format(new Date(sEnd)) : "";
+        const b = sEnd   ? fmt.format(new Date(sEnd))   : "";
         return a && b ? `${a} → ${b}` : (a || b);
-      } catch (e) {
-        console.error("Error in formatDateRange:", e);
-        return `${sStart || ""} → ${sEnd || ""}`;
-      }
+      } catch (e) { return `${sStart || ""} → ${sEnd || ""}`; }
     },
 
     formatDateTime: function (sDateTime) {
       if (!sDateTime) return "";
       try {
-        const fmt = DateFormat.getDateTimeInstance({ style: "medium" });
-        return fmt.format(new Date(sDateTime));
-      } catch (e) {
-        console.error("Error in formatDateTime:", e);
-        return sDateTime;
-      }
+        return DateFormat.getDateTimeInstance({ style: "medium" }).format(new Date(sDateTime));
+      } catch (e) { return sDateTime; }
     },
 
     formatStatusState: function (s) {
       switch ((s || "").toLowerCase()) {
-        case "pending": return "Warning";
-        case "approved": return "Success";
-        case "rejected": return "Error";
+        case "pending":   return "Warning";
+        case "approved":  return "Success";
+        case "rejected":  return "Error";
         case "cancelled": return "None";
-        default: return "None";
+        default:          return "None";
       }
     },
 
-    // ==================== TABLE EVENTS ====================
+    // TABLE EVENTS 
 
     onUpdateFinished: function (oEvent) {
       const oTable = this.byId("tblRequests");
       const oBinding = oTable?.getBinding("items");
       let iTotal = oEvent.getParameter("total");
-
       if ((iTotal === undefined || iTotal === null) && oBinding?.getLength) {
         iTotal = oBinding.getLength();
       }
-
       const oViewModel = this.getView().getModel("view");
       oViewModel.setProperty("/counts/leaveRequests", iTotal ? `(${iTotal})` : "");
       this.byId("msEmpty")?.setVisible(!iTotal || iTotal === 0);
@@ -200,33 +198,23 @@ sap.ui.define([
     },
 
     _updateKPIs: function () {
-      const oTable = this.byId("tblRequests");
-      const aItems = oTable?.getItems() || [];
+      const aItems = this.byId("tblRequests")?.getItems() || [];
       const oViewModel = this.getView().getModel("view");
-
-      let pending = 0;
-      let approvedToday = 0;
-      let rejectedToday = 0;
-
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
+      let pending = 0, approvedToday = 0, rejectedToday = 0;
+      const today = new Date(); today.setHours(0, 0, 0, 0);
 
       aItems.forEach(item => {
-        const ctx = item.getBindingContext();
-        const obj = ctx?.getObject();
+        const obj = item.getBindingContext()?.getObject();
         if (!obj) return;
-
         const status = (obj.status || "").toLowerCase();
         if (status === "pending") {
           pending++;
         } else if (status === "approved" && obj.approvedAt) {
-          const approvedDate = new Date(obj.approvedAt);
-          approvedDate.setHours(0, 0, 0, 0);
-          if (approvedDate.getTime() === today.getTime()) approvedToday++;
+          const d = new Date(obj.approvedAt); d.setHours(0, 0, 0, 0);
+          if (d.getTime() === today.getTime()) approvedToday++;
         } else if (status === "rejected" && obj.approvedAt) {
-          const rejectedDate = new Date(obj.approvedAt);
-          rejectedDate.setHours(0, 0, 0, 0);
-          if (rejectedDate.getTime() === today.getTime()) rejectedToday++;
+          const d = new Date(obj.approvedAt); d.setHours(0, 0, 0, 0);
+          if (d.getTime() === today.getTime()) rejectedToday++;
         }
       });
 
@@ -236,10 +224,9 @@ sap.ui.define([
     },
 
     onSelectionChange: function () {
-      const oTable = this.byId("tblRequests");
-      const bHasSelection = (oTable?.getSelectedItems()?.length || 0) > 0;
-      this.byId("btnApproveSel")?.setEnabled(bHasSelection);
-      this.byId("btnRejectSel")?.setEnabled(bHasSelection);
+      const bHas = (this.byId("tblRequests")?.getSelectedItems()?.length || 0) > 0;
+      this.byId("btnApproveSel")?.setEnabled(bHas);
+      this.byId("btnRejectSel")?.setEnabled(bHas);
     },
 
     onRowPress: function (oEvent) {
@@ -251,7 +238,7 @@ sap.ui.define([
       }
     },
 
-    // ==================== FILTERS & SEARCH ====================
+    // FILTERS & SEARCH 
 
     onStatusChange: function () { this._applyFilters(); },
     onDateRangeChange: function () { this._applyFilters(); },
@@ -260,7 +247,6 @@ sap.ui.define([
     onSearch: function () {
       const s = (this.byId("reqSearch")?.getValue() || "").trim();
       const isEmployeeID = /^[A-Za-z]{2,}\d{2,}$|^\d{3,}$/.test(s);
-
       if (isEmployeeID) {
         this.loadRequestsForEmployee(s);
       } else if (!s) {
@@ -272,60 +258,33 @@ sap.ui.define([
 
     onClearFilters: function () {
       this.byId("selStatus")?.setSelectedKey("All");
-      const oDR = this.byId("drSubmitted");
-      if (oDR) {
-        oDR.setDateValue(null);
-        oDR.setSecondDateValue(null);
-      }
       this.byId("reqSearch")?.setValue("");
       this.loadRequestsForEmployee("");
       this._applyFilters();
     },
 
     onRefresh: function () {
-      const oTable = this.byId("tblRequests");
-      const oBinding = oTable?.getBinding("items");
+      const oBinding = this.byId("tblRequests")?.getBinding("items");
       const oViewModel = this.getView().getModel("view");
       const useAction = !!oViewModel.getProperty("/useActionFeed");
-
       if (useAction) {
         const lastEmp = oViewModel.getProperty("/lastActionEmployeeID");
-        if (lastEmp) {
-          this.loadRequestsForEmployee(lastEmp);
-          return;
-        }
+        if (lastEmp) { this.loadRequestsForEmployee(lastEmp); return; }
       }
-
-      if (oBinding?.refresh) {
-        oBinding.refresh();
-      }
-      MessageToast.show("Leaves Rejected");
+      if (oBinding?.refresh) oBinding.refresh();
+      MessageToast.show("Refreshed");
     },
 
     _applyFilters: function () {
       const oBinding = this.byId("tblRequests")?.getBinding("items");
       if (!oBinding) return;
-
       const oViewModel = this.getView().getModel("view");
       const useAction = !!oViewModel.getProperty("/useActionFeed");
       const aFilters = [];
 
       const sStatus = this.byId("selStatus")?.getSelectedKey();
-      if (sStatus && sStatus !== "All") {
+      if (sStatus && sStatus !== "All" && sStatus !== "empty") {
         aFilters.push(new Filter("status", FilterOperator.EQ, sStatus));
-      }
-
-      const oDR = this.byId("drSubmitted");
-      if (oDR?.getDateValue() && oDR?.getSecondDateValue()) {
-        const dFrom = oDR.getDateValue();
-        const dTo = oDR.getSecondDateValue();
-        aFilters.push(new Filter({
-          filters: [
-            new Filter("submittedAt", FilterOperator.GE, dFrom),
-            new Filter("submittedAt", FilterOperator.LE, dTo)
-          ],
-          and: true
-        }));
       }
 
       const q = this.byId("reqSearch")?.getValue();
@@ -351,30 +310,31 @@ sap.ui.define([
           }));
         }
       }
-
       oBinding.filter(aFilters);
     },
 
-    // ==================== ACTION FEED HELPERS ====================
+    //  ACTION FEED HELPERS
 
     _bindTableToAction: function (aRequests) {
       const oTable = this.byId("tblRequests");
       if (!oTable) return;
 
-      const oActionModel = new JSONModel({ requests: aRequests || [] });
-      this.getView().setModel(oActionModel, "action");
-
-      const oInfo = oTable.getBindingInfo("items");
-      const oTemplate = oInfo?.template?.clone();
-
-      oTable.unbindItems();
-      oTable.bindItems({
-        path: "action>/requests",
-        template: oTemplate
+      const aSorted = (aRequests || []).slice().sort((a, b) => {
+        const diff = _statusOrder(a.status) - _statusOrder(b.status);
+        if (diff !== 0) return diff;
+        const dA = a.submittedAt ? new Date(a.submittedAt).getTime() : 0;
+        const dB = b.submittedAt ? new Date(b.submittedAt).getTime() : 0;
+        return dB - dA;
       });
 
-      const oViewModel = this.getView().getModel("view");
-      oViewModel.setProperty("/useActionFeed", true);
+      const oActionModel = new JSONModel({ requests: aSorted });
+      this.getView().setModel(oActionModel, "action");
+
+      const oTemplate = oTable.getBindingInfo("items")?.template?.clone();
+      oTable.unbindItems();
+      oTable.bindItems({ path: "action>/requests", template: oTemplate });
+
+      this.getView().getModel("view").setProperty("/useActionFeed", true);
       this._applyFilters();
     },
 
@@ -382,238 +342,125 @@ sap.ui.define([
       const oTable = this.byId("tblRequests");
       if (!oTable) return;
 
-      const oInfo = oTable.getBindingInfo("items");
-      const oTemplate = oInfo?.template?.clone();
+      const oTemplate = oTable.getBindingInfo("items")?.template?.clone();
+      const oStatusSorter = new Sorter("status", false, false, (a, b) => _statusOrder(a) - _statusOrder(b));
+      const oDateSorter   = new Sorter("submittedAt", true);
 
       oTable.unbindItems();
       oTable.bindItems({
         path: "/LeaveRequests",
         template: oTemplate,
-        parameters: { $count: true }
+        parameters: { $count: true },
+        sorter: [oStatusSorter, oDateSorter]
       });
 
-      const oViewModel = this.getView().getModel("view");
-      oViewModel.setProperty("/useActionFeed", false);
+      this.getView().getModel("view").setProperty("/useActionFeed", false);
     },
 
-    loadRequestsForEmployee: function (employeeID) {
-      const oModel = this.getView().getModel();
-      const oViewModel = this.getView().getModel("view");
+    //  ROW ACTIONS 
 
-      if (!employeeID) {
-        this._bindTableToOData();
-        oViewModel.setProperty("/lastActionEmployeeID", "");
-        this._refreshTableBindings();
-        return;
-      }
+    onApproveOne: function (oEvent) {
+      const oSource = oEvent.getSource();
+      const useAction = !!this.getView().getModel("view").getProperty("/useActionFeed");
+      const ctx = useAction ? oSource.getBindingContext("action") : oSource.getBindingContext();
+      const oData = ctx?.getObject();
+      if (!oData) { MessageBox.error("Could not read request data. Please refresh."); return; }
 
-      if (!oModel?.callFunction) {
-        MessageBox.error("OData action call not available on model.");
-        return;
-      }
-
-      sap.ui.core.BusyIndicator.show(0);
-
-      oModel.callFunction("/leaveRequests", {
-        method: "POST",
-        urlParameters: { employeeID },
-        success: (data) => {
-          sap.ui.core.BusyIndicator.hide();
-          const payload = data || {};
-          const requests = payload.requests || [];
-          const count = Number(payload.count || requests.length || 0);
-
-          this._bindTableToAction(requests);
-          oViewModel.setProperty("/lastActionEmployeeID", employeeID);
-          MessageToast.show(`Loaded ${count} request(s) for employee ${employeeID}`);
-        },
-        error: (oError) => {
-          sap.ui.core.BusyIndicator.hide();
-          console.error("leaveRequests action failed:", oError);
-          let errorMessage = "Failed to load employee requests.";
-          try {
-            const errResponse = JSON.parse(oError.responseText);
-            errorMessage = errResponse?.error?.message || errorMessage;
-          } catch (e) {}
-          MessageBox.error(errorMessage);
+      const sName = oData.empname || oData.employee_employeeId || "Unknown";
+      MessageBox.confirm(`Approve leave request for ${sName}?`, {
+        onClose: (sAction) => {
+          if (sAction === MessageBox.Action.OK) {
+            this._approveRequest(oData.ID || oData.id, oData.employee_employeeId || oData.employeeId || "");
+          }
         }
       });
     },
 
-    // ==================== ROW ACTIONS ====================
-
-   onApproveOne: function (oEvent) {
-  const oSource = oEvent.getSource();
-  const oViewModel = this.getView().getModel("view");
-  const useAction = !!oViewModel.getProperty("/useActionFeed");
-
-  // ✅ FIX: Use correct binding context based on current table mode
-  const ctx = useAction
-    ? oSource.getBindingContext("action")
-    : oSource.getBindingContext();
-
-  const oData = ctx?.getObject();
-
-  console.log("onApproveOne oData:", oData, "useAction:", useAction);
-
-  if (!oData) {
-    MessageBox.error("Could not read request data. Please refresh.");
-    return;
-  }
-
-  const sEmployeeName = oData.empname || oData.employee_employeeId || "Unknown";
-  MessageBox.confirm(`Approve leave request for ${sEmployeeName}?`, {
-    onClose: (sAction) => {
-      if (sAction === MessageBox.Action.OK) {
-        const sEmpId = oData.employee_employeeId || oData.employeeId || "";
-        this._approveRequest(oData.ID || oData.id, sEmpId);
-      }
-    }
-  });
-},
-
-onRejectOne: function (oEvent) {
-  const oSource = oEvent.getSource();
-  const oViewModel = this.getView().getModel("view");
-  const useAction = !!oViewModel.getProperty("/useActionFeed");
-
-  // ✅ FIX: Use correct binding context based on current table mode
-  const ctx = useAction
-    ? oSource.getBindingContext("action")
-    : oSource.getBindingContext();
-
-  const oData = ctx?.getObject();
-
-  console.log("onRejectOne oData:", oData, "useAction:", useAction);
-
-  if (!oData) {
-    MessageBox.error("Could not read request data. Please refresh.");
-    return;
-  }
-  this._openRejectDialog(oData);
-},
+    onRejectOne: function (oEvent) {
+      const oSource = oEvent.getSource();
+      const useAction = !!this.getView().getModel("view").getProperty("/useActionFeed");
+      const ctx = useAction ? oSource.getBindingContext("action") : oSource.getBindingContext();
+      const oData = ctx?.getObject();
+      if (!oData) { MessageBox.error("Could not read request data. Please refresh."); return; }
+      this._openRejectDialog(oData);
+    },
 
     onApproveFromPopover: function () {
       const oPopover = this.byId("popDetails");
-      const ctx = oPopover?.getBindingContext();
-      const oData = ctx?.getObject();
+      const oData = oPopover?.getBindingContext()?.getObject();
       if (!oData) return;
-
-      const sEmployeeName = oData.empname || oData.employee_employeeId || "Unknown";
-
-      MessageBox.confirm(`Approve leave request for ${sEmployeeName}?`, {
+      const sName = oData.empname || oData.employee_employeeId || "Unknown";
+      MessageBox.confirm(`Approve leave request for ${sName}?`, {
         onClose: (sAction) => {
           if (sAction === MessageBox.Action.OK) {
-            const sEmpId = oData.employee_employeeId || oData.employeeId || "";
-            this._approveRequest(oData.ID || oData.id, sEmpId);
+            this._approveRequest(oData.ID || oData.id, oData.employee_employeeId || oData.employeeId || "");
             oPopover.close();
           }
         }
       });
     },
 
-  onRejectFromPopover: function () {
-  const oPopover = this.byId("popDetails");
-  // Popover context is always set via setBindingContext() directly, 
-  // so no model name needed here
-  const ctx = oPopover?.getBindingContext() || oPopover?.getBindingContext("action");
-  const oData = ctx?.getObject();
-
-  console.log("onRejectFromPopover oData:", oData);
-
-  if (!oData) return;
-  oPopover.close();
-  this._openRejectDialog(oData);
-},
+    onRejectFromPopover: function () {
+      const oPopover = this.byId("popDetails");
+      const ctx = oPopover?.getBindingContext() || oPopover?.getBindingContext("action");
+      const oData = ctx?.getObject();
+      if (!oData) return;
+      oPopover.close();
+      this._openRejectDialog(oData);
+    },
 
     onApproveSelected: function () {
-      const oTable = this.byId("tblRequests");
-      const aSelectedItems = oTable?.getSelectedItems() || [];
-      if (aSelectedItems.length === 0) {
-        MessageToast.show("Please select at least one request");
-        return;
-      }
-
-      // capture employeeId per request for EventBus
-      const aRequests = aSelectedItems.map(item => {
-        const ctx = item.getBindingContext();
-        const obj = ctx.getObject();
-        return {
-          id: obj.ID || obj.id,
-          employeeId: obj.employee_employeeId || obj.employeeId || ""
-        };
+      const aItems = this.byId("tblRequests")?.getSelectedItems() || [];
+      if (!aItems.length) { MessageToast.show("Please select at least one request"); return; }
+      const aReqs = aItems.map(i => {
+        const o = i.getBindingContext().getObject();
+        return { id: o.ID || o.id, employeeId: o.employee_employeeId || o.employeeId || "" };
       });
-
-      MessageBox.confirm(`Approve ${aRequests.length} leave request(s)?`, {
-        onClose: (sAction) => {
-          if (sAction === MessageBox.Action.OK) {
-            this._approveMultipleRequests(aRequests);
-          }
-        }
+      MessageBox.confirm(`Approve ${aReqs.length} leave request(s)?`, {
+        onClose: (s) => { if (s === MessageBox.Action.OK) this._approveMultipleRequests(aReqs); }
       });
     },
 
     onRejectSelected: function () {
-      const oTable = this.byId("tblRequests");
-      const aSelectedItems = oTable?.getSelectedItems() || [];
-      if (aSelectedItems.length === 0) {
-        MessageToast.show("Please select at least one request");
-        return;
-      }
-
-      // capture employeeId per request
-      const aRequests = aSelectedItems.map(item => {
-        const ctx = item.getBindingContext();
-        const oData = ctx.getObject();
+      const aItems = this.byId("tblRequests")?.getSelectedItems() || [];
+      if (!aItems.length) { MessageToast.show("Please select at least one request"); return; }
+      const aReqs = aItems.map(i => {
+        const o = i.getBindingContext().getObject();
         return {
-          id: oData.ID || oData.id,
-          empname: oData.empname || oData.employee_employeeId || "Unknown",
-          leaveType: oData.leaveType || this.formatLeaveTypeFullDesc(oData.leaveType_code),
-          employeeId: oData.employee_employeeId || oData.employeeId || ""
+          id: o.ID || o.id,
+          empname: o.empname || o.employee_employeeId || "Unknown",
+          leaveType: o.leaveType || this.formatLeaveTypeFullDesc(o.leaveType_code),
+          employeeId: o.employee_employeeId || o.employeeId || ""
         };
       });
-
-      this._openBulkRejectDialog(aRequests);
+      this._openBulkRejectDialog(aReqs);
     },
 
-    // ==================== REJECT DIALOG ====================
-_openRejectDialog: function (oData) {
-  const oViewModel = this.getView().getModel("view");
-  const empName = oData.empname || oData.employee_employeeId || "Unknown";
-  const ltFull = oData.leaveType || this.formatLeaveTypeFullDesc(oData.leaveType_code);
+    //  REJECT DIALOG
 
-  // ✅ FIX: Try all possible ID field variants
-  const sRequestId = oData.ID || oData.id || oData.requestId || "";
-
-  console.log("Opening reject dialog, resolved requestId:", sRequestId, "from oData:", oData);
-
-  if (!sRequestId) {
-    MessageBox.error("Could not resolve request ID. Please refresh and try again.");
-    return;
-  }
-
-  oViewModel.setProperty("/rejectData/employeeName", empName);
-  oViewModel.setProperty("/rejectData/leaveType", ltFull);
-  oViewModel.setProperty("/rejectData/comments", "");
-  oViewModel.setProperty("/rejectData/commentLength", 0);
-  oViewModel.setProperty("/rejectData/requestId", sRequestId);
-  oViewModel.setProperty("/rejectData/isBulk", false);
-  oViewModel.setProperty("/rejectData/employeeId", oData.employee_employeeId || oData.employeeId || "");
-
-  this.byId("rejectCommentDialog")?.open();
-},
+    _openRejectDialog: function (oData) {
+      const sRequestId = oData.ID || oData.id || oData.requestId || "";
+      if (!sRequestId) { MessageBox.error("Could not resolve request ID. Please refresh and try again."); return; }
+      const oVM = this.getView().getModel("view");
+      oVM.setProperty("/rejectData/employeeName", oData.empname || oData.employee_employeeId || "Unknown");
+      oVM.setProperty("/rejectData/leaveType", oData.leaveType || this.formatLeaveTypeFullDesc(oData.leaveType_code));
+      oVM.setProperty("/rejectData/comments", "");
+      oVM.setProperty("/rejectData/commentLength", 0);
+      oVM.setProperty("/rejectData/requestId", sRequestId);
+      oVM.setProperty("/rejectData/isBulk", false);
+      oVM.setProperty("/rejectData/employeeId", oData.employee_employeeId || oData.employeeId || "");
+      this.byId("rejectCommentDialog")?.open();
+    },
 
     _openBulkRejectDialog: function (aRequests) {
-      const oViewModel = this.getView().getModel("view");
-
-      oViewModel.setProperty("/rejectData/employeeName", `${aRequests.length} employees`);
-      oViewModel.setProperty("/rejectData/leaveType", "Multiple requests");
-      oViewModel.setProperty("/rejectData/comments", "");
-      oViewModel.setProperty("/rejectData/commentLength", 0);
-      oViewModel.setProperty("/rejectData/bulkRequests", aRequests);
-      oViewModel.setProperty("/rejectData/isBulk", true);
-      oViewModel.setProperty("/rejectData/employeeId", "");   // clear single employeeId for bulk
-
+      const oVM = this.getView().getModel("view");
+      oVM.setProperty("/rejectData/employeeName", `${aRequests.length} employees`);
+      oVM.setProperty("/rejectData/leaveType", "Multiple requests");
+      oVM.setProperty("/rejectData/comments", "");
+      oVM.setProperty("/rejectData/commentLength", 0);
+      oVM.setProperty("/rejectData/bulkRequests", aRequests);
+      oVM.setProperty("/rejectData/isBulk", true);
+      oVM.setProperty("/rejectData/employeeId", "");
       this.byId("rejectCommentDialog")?.open();
     },
 
@@ -623,296 +470,282 @@ _openRejectDialog: function (oData) {
     },
 
     onConfirmReject: function () {
-      const oViewModel = this.getView().getModel("view");
-      const oRejectData = oViewModel.getProperty("/rejectData");
+      const oData = this.getView().getModel("view").getProperty("/rejectData");
+      if (!oData.comments?.trim()) { MessageToast.show("Please enter rejection comments"); return; }
+      if (oData.isBulk) {
+        this._rejectMultipleRequests(oData.bulkRequests, oData.comments);
+      } else {
+        this._rejectRequest(oData.requestId, oData.comments, oData.employeeId);
+      }
+      this.byId("rejectCommentDialog")?.close();
+    },
 
-      if (!oRejectData.comments || !oRejectData.comments.trim()) {
-        MessageToast.show("Please enter rejection comments");
+    onCancelReject: function () { this.byId("rejectCommentDialog")?.close(); },
+
+    // GENERATE EMPLOYEE LEAVES — dialog handlers 
+
+    /**
+     * Opens the Generate Leaves dialog 
+     */
+    onOpenGenerateLeaves: function () {
+      const oVM = this.getView().getModel("view");
+      oVM.setProperty("/generateLeaves", {
+        employeeId:     "",
+        earnedDays:     0,
+        optionalDays:   0,
+        totalDays:      0,
+        empMessage:     "",
+        empMessageType: "None"
+      });
+      this.byId("generateLeavesDialog")?.open();
+    },
+
+    
+    //  Closes the dialog without saving.
+    
+    onCancelGenerateLeaves: function () {
+      this.byId("generateLeavesDialog")?.close();
+    },
+
+    
+    //  Clears any previous validation message.
+        onGenEmpIdChange: function () {
+      const oVM  = this.getView().getModel("view");
+      const sId  = (oVM.getProperty("/generateLeaves/employeeId") || "").trim();
+      // Clear old message whenever the field changes
+      oVM.setProperty("/generateLeaves/empMessage", "");
+      oVM.setProperty("/generateLeaves/empMessageType", "None");
+      if (!sId) return;
+      // Simple format hint — actual existence is validated on submit
+      const looks = /^[A-Za-z]{1,3}\d{2,}$|^\d{3,}$/.test(sId);
+      if (!looks) {
+        oVM.setProperty("/generateLeaves/empMessage", "Employee ID format looks unusual (e.g. E1001).");
+        oVM.setProperty("/generateLeaves/empMessageType", "Warning");
+      }
+    },
+
+    /**
+     * Recalculates the total whenever Earned or Optional days change.
+     */
+    onGenDaysChange: function () {
+      const oVM = this.getView().getModel("view");
+      const earned   = Number(oVM.getProperty("/generateLeaves/earnedDays")   || 0);
+      const optional = Number(oVM.getProperty("/generateLeaves/optionalDays") || 0);
+      oVM.setProperty("/generateLeaves/totalDays", earned + optional);
+    },
+
+    /**
+     * Validates inputs.
+     */
+    onConfirmGenerateLeaves: async function () {
+      const oVM = this.getView().getModel("view");
+      const gen  = oVM.getProperty("/generateLeaves");
+
+      const sEmpId   = (gen.employeeId || "").trim();
+      const earned   = Number(gen.earnedDays   || 0);
+      const optional = Number(gen.optionalDays || 0);
+      const total    = earned + optional;
+
+      if (!sEmpId) {
+        MessageBox.warning("Please enter an Employee ID.");
+        return;
+      }
+      if (total < 1) {
+        MessageBox.warning("Please enter at least 1 day for Earned or Optional leaves.");
         return;
       }
 
-      if (oRejectData.isBulk) {
-        this._rejectMultipleRequests(oRejectData.bulkRequests, oRejectData.comments);
-      } else {
-        // pass employeeId through to _rejectRequest
-        this._rejectRequest(oRejectData.requestId, oRejectData.comments, oRejectData.employeeId);
-      }
+      sap.ui.core.BusyIndicator.show(0);
 
-      this.byId("rejectCommentDialog")?.close();
+      try {
+        const res = await fetch("/odata/v4/my-services/assignLeaveBalance", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            employeeId:   sEmpId,
+            earnedDays:   earned,
+            optionalDays: optional
+          })
+        });
+
+        sap.ui.core.BusyIndicator.hide();
+
+        if (!res.ok) {
+          let errMsg = "Failed to assign leave balance.";
+          try { errMsg = (await res.json())?.error?.message || errMsg; } catch (e) {}
+          // Show the error inside the dialog strip so the manager can correct it
+          oVM.setProperty("/generateLeaves/empMessage", errMsg);
+          oVM.setProperty("/generateLeaves/empMessageType", "Error");
+          return;
+        }
+
+        const data = await res.json();
+
+        // Close dialog on success
+        this.byId("generateLeavesDialog")?.close();
+
+        MessageToast.show(
+          `Leave balance assigned to ${sEmpId}: ` +
+          `Earned ${earned} day(s), Optional ${optional} day(s) — Total ${total} day(s).`
+        );
+
+        // Refresh employee view for balance table
+        this._bus.publish("leave", "changed", {
+          employeeId: sEmpId,
+          source:     "manager",
+          change:     "balanceAssigned",
+          earned:     earned,
+          optional:   optional,
+          total:      total
+        });
+
+        console.log("[assignLeaveBalance] success:", data);
+
+      } catch (e) {
+        sap.ui.core.BusyIndicator.hide();
+        console.error("assignLeaveBalance error:", e);
+        oVM.setProperty("/generateLeaves/empMessage", e.message || "Failed to assign leave balance.");
+        oVM.setProperty("/generateLeaves/empMessageType", "Error");
+      }
     },
 
-    onCancelReject: function () {
-      this.byId("rejectCommentDialog")?.close();
+    // BACKEND CALLS 
+
+    _approveRequest: async function (sRequestId, sEmployeeId) {
+      const sApproverId = this._getApproverId();
+      sap.ui.core.BusyIndicator.show(0);
+      try {
+        const res = await fetch("/odata/v4/my-services/approveLeaveRequest", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ requestId: sRequestId, approverId: sApproverId, comments: "" })
+        });
+        sap.ui.core.BusyIndicator.hide();
+        if (!res.ok) {
+          let e = "Failed to approve leave request.";
+          try { e = (await res.json())?.error?.message || e; } catch (_) {}
+          MessageBox.error(e); return;
+        }
+        MessageToast.show("Leave request approved successfully");
+        this._bus.publish("leave", "changed", {
+          employeeId: sEmployeeId || "", source: "manager", change: "approved", requestId: sRequestId
+        });
+        this.onRefresh();
+      } catch (e) {
+        sap.ui.core.BusyIndicator.hide();
+        MessageBox.error("Failed to approve leave request.");
+      }
     },
 
-
-
-// ==================== BACKEND CALLS ====================
-
-/**
- * Approve a leave request — uses fetch (V4 compatible)
- */
-_approveRequest: async function (sRequestId, sEmployeeId) {
-  const sApproverId = this._getApproverId();
-
-  sap.ui.core.BusyIndicator.show(0);
-
-  try {
-    const res = await fetch("/odata/v4/my-services/approveLeaveRequest", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        requestId: sRequestId,
-        approverId: sApproverId,
-        comments: ""
-      })
-    });
-
-    sap.ui.core.BusyIndicator.hide();
-
-    if (!res.ok) {
-      let errMsg = "Failed to approve leave request.";
-      try { errMsg = (await res.json())?.error?.message || errMsg; } catch (e) {}
-      MessageBox.error(errMsg);
-      return;
-    }
-
-    MessageToast.show("Leave request approved successfully");
-
-    //  Employee view refreshes
-    this._bus.publish("leave", "changed", {
-      employeeId: sEmployeeId || "",
-      source: "manager",
-      change: "approved",
-      requestId: sRequestId
-    });
-
-    this.onRefresh();
-
-  } catch (e) {
-    sap.ui.core.BusyIndicator.hide();
-    console.error("Approve error:", e);
-    MessageBox.error("Failed to approve leave request.");
-  }
-},
-
-/**
- * Reject a leave request 
- */
-_rejectRequest: async function (sRequestId, sComments, sEmployeeId) {
-  const sApproverId = this._getApproverId();
-
-  sap.ui.core.BusyIndicator.show(0);
-
-  try {
-    const res = await fetch("/odata/v4/my-services/rejectLeaveRequest", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        requestId: sRequestId,
-        approverId: sApproverId,
-        comments: sComments
-      })
-    });
-
-    sap.ui.core.BusyIndicator.hide();
-
-    if (!res.ok) {
-      let errMsg = "Failed to reject leave request.";
-      try { errMsg = (await res.json())?.error?.message || errMsg; } catch (e) {}
-      MessageBox.error(errMsg);
-      return;
-    }
-
-    MessageToast.show("Leave request rejected successfully");
-
-    //Employee view refreshes
-    this._bus.publish("leave", "changed", {
-      employeeId: sEmployeeId || "",
-      source: "manager",
-      change: "rejected",
-      requestId: sRequestId,
-      comments: sComments
-    });
-
-    this.onRefresh();
-
-  } catch (e) {
-    sap.ui.core.BusyIndicator.hide();
-    console.error("Reject error:", e);
-    MessageBox.error("Failed to reject leave request.");
-  }
-},
-
-/**
- * Approve multiple requests 
- */
-_approveMultipleRequests: async function (aRequests) {
-  const sApproverId = this._getApproverId();
-  let successCount = 0;
-  let errorCount = 0;
-  const affectedEmployeeIds = new Set();
-
-  sap.ui.core.BusyIndicator.show(0);
-
-  for (const request of aRequests) {
-    try {
-      const res = await fetch("/odata/v4/my-services/approveLeaveRequest", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          requestId: request.id,
-          approverId: sApproverId,
-          comments: ""
-        })
-      });
-
-      if (!res.ok) {
-        errorCount++;
-        console.error(`Failed to approve request ${request.id}:`, await res.text());
-      } else {
-        successCount++;
-        if (request.employeeId) affectedEmployeeIds.add(request.employeeId);
+    _rejectRequest: async function (sRequestId, sComments, sEmployeeId) {
+      const sApproverId = this._getApproverId();
+      sap.ui.core.BusyIndicator.show(0);
+      try {
+        const res = await fetch("/odata/v4/my-services/rejectLeaveRequest", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ requestId: sRequestId, approverId: sApproverId, comments: sComments })
+        });
+        sap.ui.core.BusyIndicator.hide();
+        if (!res.ok) {
+          let e = "Failed to reject leave request.";
+          try { e = (await res.json())?.error?.message || e; } catch (_) {}
+          MessageBox.error(e); return;
+        }
+        MessageToast.show("Leave request rejected successfully");
+        this._bus.publish("leave", "changed", {
+          employeeId: sEmployeeId || "", source: "manager", change: "rejected",
+          requestId: sRequestId, comments: sComments
+        });
+        this.onRefresh();
+      } catch (e) {
+        sap.ui.core.BusyIndicator.hide();
+        MessageBox.error("Failed to reject leave request.");
       }
-    } catch (e) {
-      errorCount++;
-      console.error(`Error approving request ${request.id}:`, e);
-    }
-  }
+    },
 
-  sap.ui.core.BusyIndicator.hide();
-
-  if (errorCount === 0) {
-    MessageToast.show(`Successfully approved ${successCount} request(s)`);
-  } else {
-    MessageBox.warning(`Approved ${successCount} request(s).\n${errorCount} request(s) failed.`);
-  }
-
-  // Publish one event per affected employee
-  affectedEmployeeIds.forEach(empId => {
-    this._bus.publish("leave", "changed", {
-      employeeId: empId,
-      source: "manager",
-      change: "approved"
-    });
-  });
-
-  this.onRefresh();
-},
-
-/**
- * Reject multiple requests 
- */
-_rejectMultipleRequests: async function (aRequests, sComments) {
-  const sApproverId = this._getApproverId();
-  let successCount = 0;
-  let errorCount = 0;
-  const affectedEmployeeIds = new Set();
-
-  sap.ui.core.BusyIndicator.show(0);
-
-  for (const request of aRequests) {
-    try {
-      const res = await fetch("/odata/v4/my-services/rejectLeaveRequest", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          requestId: request.id,
-          approverId: sApproverId,
-          comments: sComments
-        })
-      });
-
-      if (!res.ok) {
-        errorCount++;
-        console.error(`Failed to reject request ${request.id}:`, await res.text());
-      } else {
-        successCount++;
-        if (request.employeeId) affectedEmployeeIds.add(request.employeeId);
+    _approveMultipleRequests: async function (aRequests) {
+      const sApproverId = this._getApproverId();
+      let ok = 0, fail = 0;
+      const affected = new Set();
+      sap.ui.core.BusyIndicator.show(0);
+      for (const r of aRequests) {
+        try {
+          const res = await fetch("/odata/v4/my-services/approveLeaveRequest", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ requestId: r.id, approverId: sApproverId, comments: "" })
+          });
+          if (!res.ok) { fail++; } else { ok++; if (r.employeeId) affected.add(r.employeeId); }
+        } catch (e) { fail++; }
       }
-    } catch (e) {
-      errorCount++;
-      console.error(`Error rejecting request ${request.id}:`, e);
-    }
-  }
+      sap.ui.core.BusyIndicator.hide();
+      if (fail === 0) { MessageToast.show(`Successfully approved ${ok} request(s)`); }
+      else { MessageBox.warning(`Approved ${ok} request(s).\n${fail} request(s) failed.`); }
+      affected.forEach(id => this._bus.publish("leave", "changed", { employeeId: id, source: "manager", change: "approved" }));
+      this.onRefresh();
+    },
 
-  sap.ui.core.BusyIndicator.hide();
+    _rejectMultipleRequests: async function (aRequests, sComments) {
+      const sApproverId = this._getApproverId();
+      let ok = 0, fail = 0;
+      const affected = new Set();
+      sap.ui.core.BusyIndicator.show(0);
+      for (const r of aRequests) {
+        try {
+          const res = await fetch("/odata/v4/my-services/rejectLeaveRequest", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ requestId: r.id, approverId: sApproverId, comments: sComments })
+          });
+          if (!res.ok) { fail++; } else { ok++; if (r.employeeId) affected.add(r.employeeId); }
+        } catch (e) { fail++; }
+      }
+      sap.ui.core.BusyIndicator.hide();
+      if (fail === 0) { MessageToast.show(`Successfully rejected ${ok} request(s)`); }
+      else { MessageBox.warning(`Rejected ${ok} request(s).\n${fail} request(s) failed.`); }
+      affected.forEach(id => this._bus.publish("leave", "changed", { employeeId: id, source: "manager", change: "rejected", comments: sComments }));
+      this.onRefresh();
+    },
 
-  if (errorCount === 0) {
-    MessageToast.show(`Successfully rejected ${successCount} request(s)`);
-  } else {
-    MessageBox.warning(`Rejected ${successCount} request(s).\n${errorCount} request(s) failed.`);
-  }
+    loadRequestsForEmployee: async function (employeeID) {
+      const oViewModel = this.getView().getModel("view");
+      if (!employeeID) {
+        this._bindTableToOData();
+        oViewModel.setProperty("/lastActionEmployeeID", "");
+        this._refreshTableBindings();
+        return;
+      }
+      sap.ui.core.BusyIndicator.show(0);
+      try {
+        const res = await fetch("/odata/v4/my-services/leaveRequests", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ employeeID })
+        });
+        sap.ui.core.BusyIndicator.hide();
+        if (!res.ok) {
+          let e = "Failed to load employee requests.";
+          try { e = (await res.json())?.error?.message || e; } catch (_) {}
+          MessageBox.error(e); return;
+        }
+        const data = await res.json();
+        const requests = data.requests || [];
+        this._bindTableToAction(requests);
+        oViewModel.setProperty("/lastActionEmployeeID", employeeID);
+        MessageToast.show(`Loaded ${Number(data.count || requests.length)} request(s) for employee ${employeeID}`);
+      } catch (e) {
+        sap.ui.core.BusyIndicator.hide();
+        MessageBox.error("Failed to load employee requests.");
+      }
+    },
 
-  // Publish one event per affected employee
-  affectedEmployeeIds.forEach(empId => {
-    this._bus.publish("leave", "changed", {
-      employeeId: empId,
-      source: "manager",
-      change: "rejected",
-      comments: sComments
-    });
-  });
+    _getApproverId: function () {
+      const empId = this.getOwnerComponent()?.getModel("user")?.getProperty("/employeeId");
+      return empId || "MANAGER001";
+    },
 
-  this.onRefresh();
-},
-
-/**
- * Also fix loadRequestsForEmployee to use fetch
- */
-loadRequestsForEmployee: async function (employeeID) {
-  const oViewModel = this.getView().getModel("view");
-
-  if (!employeeID) {
-    this._bindTableToOData();
-    oViewModel.setProperty("/lastActionEmployeeID", "");
-    this._refreshTableBindings();
-    return;
-  }
-
-  sap.ui.core.BusyIndicator.show(0);
-
-  try {
-    const res = await fetch("/odata/v4/my-services/leaveRequests", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ employeeID })
-    });
-
-    sap.ui.core.BusyIndicator.hide();
-
-    if (!res.ok) {
-      let errMsg = "Failed to load employee requests.";
-      try { errMsg = (await res.json())?.error?.message || errMsg; } catch (e) {}
-      MessageBox.error(errMsg);
-      return;
-    }
-
-    const data = await res.json();
-    const requests = data.requests || [];
-    const count = Number(data.count || requests.length || 0);
-
-    this._bindTableToAction(requests);
-    oViewModel.setProperty("/lastActionEmployeeID", employeeID);
-    MessageToast.show(`Loaded ${count} request(s) for employee ${employeeID}`);
-
-  } catch (e) {
-    sap.ui.core.BusyIndicator.hide();
-    console.error("leaveRequests fetch failed:", e);
-    MessageBox.error("Failed to load employee requests.");
-  }
-},
-
-/**
- * Helper: get current manager/approver ID from session model
- * Replace "MANAGER001" with real session lookup once available
- */
-_getApproverId: function () {
-  const oUserModel = this.getOwnerComponent()?.getModel("user");
-  const empId = oUserModel?.getProperty("/employeeId");
-  return empId || "MANAGER001";
-},
-    // ==================== LOGOUT ====================
+    // LOGOUT 
 
     onLogout: function () {
       MessageBox.confirm("Are you sure you want to logout?", {
@@ -922,16 +755,9 @@ _getApproverId: function () {
           if (sAction !== MessageBox.Action.OK) return;
           try { sessionStorage.clear(); } catch (e) {}
           try { localStorage.clear(); } catch (e) {}
-          if (sap.ushell?.Container) {
-            window.location.hash = "#Shell-home";
-            return;
-          }
-          const oComp = this.getOwnerComponent?.();
-          const oRouter = oComp?.getRouter?.();
-          if (oRouter?.navTo) {
-            oRouter.navTo("Login", {}, true);
-            return;
-          }
+          if (sap.ushell?.Container) { window.location.hash = "#Shell-home"; return; }
+          const oRouter = this.getOwnerComponent?.()?.getRouter?.();
+          if (oRouter?.navTo) { oRouter.navTo("Login", {}, true); return; }
           window.location.replace("/login");
         }
       });

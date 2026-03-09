@@ -11,7 +11,7 @@ sap.ui.define(
 
     return Controller.extend("lmsui5.controller.Register", {
       onInit: function () {
-        // Register form model with proper binding
+        // Register form with binding
         const oRegisterModel = new JSONModel({
           firstName: "",
           lastName: "",
@@ -28,7 +28,7 @@ sap.ui.define(
           .getRoute("Register")
           .attachPatternMatched(this._onRegisterRouteMatched, this);
 
-        // (Re)attach Enter navigation after each render
+        // Enter navigation after each render
         this.getView().addEventDelegate({
           onAfterRendering: this._setupEnterKeyNavigation.bind(this),
         });
@@ -36,8 +36,6 @@ sap.ui.define(
 
       _setupEnterKeyNavigation: function () {
         const that = this;
-
-        // Ensure these IDs match the XML exactly
         const aFieldIds = [
           "firstName",
           "lastName",
@@ -171,8 +169,8 @@ sap.ui.define(
         BusyIndicator.show(0);
 
         try {
-          console.log("📤 Submitting registration request...");
-          console.log("📋 Registration data:", {
+          console.log(" Submitting registration request...");
+          console.log(" Registration data:", {
             firstName: oData.firstName.trim(),
             lastName: oData.lastName.trim(),
             email: oData.email.trim(),
@@ -193,7 +191,7 @@ sap.ui.define(
             requestBody.managerId = oData.managerId.trim();
           }
 
-          console.log("📝 Request body:", JSON.stringify(requestBody, null, 2));
+          console.log(" Request body:", JSON.stringify(requestBody, null, 2));
 
           // POST to custom register action endpoint
           const res = await fetch("/odata/v4/my-services/register", {
@@ -205,8 +203,8 @@ sap.ui.define(
             body: JSON.stringify(requestBody),
           });
 
-          console.log("📥 Response status:", res.status);
-          console.log("📥 Response headers:", res.headers);
+          console.log("Response status:", res.status);
+          console.log("Response headers:", res.headers);
 
           // Parse response
           let responseData = null;
@@ -217,18 +215,18 @@ sap.ui.define(
               responseData = await res.json();
             } else {
               const text = await res.text();
-              console.log("📥 Response text:", text);
+              console.log("Response text:", text);
               responseData = { success: false, message: text };
             }
           } catch (parseErr) {
-            console.error("❌ Error parsing response:", parseErr);
+            console.error("Error parsing response:", parseErr);
             responseData = {
               success: false,
               message: "Invalid response from server",
             };
           }
 
-          console.log("📥 Parsed response:", JSON.stringify(responseData, null, 2));
+          console.log("Parsed response:", JSON.stringify(responseData, null, 2));
 
           // Check if response indicates success
           if (!res.ok) {
@@ -236,7 +234,7 @@ sap.ui.define(
               responseData?.message ||
               responseData?.error?.message ||
               "Registration failed";
-            console.error("❌ Server error:", errMessage);
+            console.error(" Server error:", errMessage);
             throw new Error(errMessage);
           }
 
@@ -245,7 +243,7 @@ sap.ui.define(
             throw new Error(responseData.message || "Registration failed");
           }
 
-          console.log("✅ Registration successful:", responseData);
+          console.log("Registration successful:", responseData);
 
           // Show success message
           MessageToast.show(
@@ -273,7 +271,7 @@ sap.ui.define(
             this.getOwnerComponent().getRouter().navTo("Login");
           }, 1500);
         } catch (err) {
-          console.error("❌ Registration error:", err);
+          console.error("Registration error:", err);
           this._showError(
             oMsg,
             err.message || "Registration failed. Please try again."

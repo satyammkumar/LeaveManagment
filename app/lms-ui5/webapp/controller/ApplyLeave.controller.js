@@ -68,8 +68,7 @@ sap.ui.define([
     },
 
     /**
-     * Helper: fetch LeaveType ID (UUID) by business key 'code'
-      
+     * Helper: fetch LeaveType ID (UUID) by business key code
      */
     _fetchLeaveTypeByCode: async function (sCode) {
       const oModel = this.getView().getModel();
@@ -115,7 +114,7 @@ sap.ui.define([
         return;
       }
 
-      // start/end
+      // start/end calculation
       const aSorted = aDates.slice().sort((a, b) => a - b);
       const sStart = this._toYMD(aSorted[0]);
       const sEnd   = this._toYMD(aSorted[aSorted.length - 1]);

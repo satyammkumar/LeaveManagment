@@ -35,24 +35,21 @@ service MyServices {
     };
   };
 
- action register(
+  action register(
     employeeId : String(10),
     firstName  : String(50),
     lastName   : String(50),
     email      : String(100),
     password   : String(100),
-    managerId  :String(10)
+    managerId  : String(10)
   ) returns {
     success    : Boolean;
     message    : String;
     employeeId : String(10);
   };
 
-
-
   // Get employee data by email
-
- action getEmployeeData(email: String) returns {
+  action getEmployeeData(email: String) returns {
     success  : Boolean;
     message  : String;
     employee : {
@@ -64,8 +61,18 @@ service MyServices {
       department : String;
       managerID  : String;
     };
+    leaveBalances : array of {
+      id                   : String;
+      leaveTypeCode        : String;
+      leaveTypeDescription : String;
+      isPaid               : Boolean;
+      maxDays              : Integer;
+      accruedDays          : Integer;
+      usedDays             : Integer;
+      balance              : Integer;
+      availableDays        : Integer;
+    };
   };
-
 
   // Get employee leave balance
   action getEmployeeLeaveBalance(employeeID: String) returns {
@@ -86,18 +93,41 @@ service MyServices {
     success: Boolean;
     message: String;
     requests: array of {
-      id: String;
-      empname:String;
-      leaveType: String;
-      startDate: Date;
-      endDate: Date;
-      daysRequested: Integer;
-      reason: String;
-      status: String;
-      submittedAt: DateTime;
-      approvedBy: String;
-      approvedAt: DateTime;
+      id             : String;
+      empname        : String;
+      leaveType      : String;
+      leaveTypeCode  : String;
+      startDate      : Date;
+      endDate        : Date;
+      daysRequested  : Integer;
+      reason         : String;
+      status         : String;
+      submittedAt    : DateTime;
+      approvedBy     : String;
+      approvedAt     : DateTime;
+      managerComments: String;
     };
     count: Integer;
   };
+
+  // Assign leave balance to an employee 
+action assignLeaveBalance(
+  employeeId   : String,    
+  earnedDays   : Integer,   
+  optionalDays : Integer    
+) returns {
+  success      : Boolean;
+  message      : String;
+  employeeId   : String;
+  earnedDays   : Integer;
+  optionalDays : Integer;
+  totalDays    : Integer;
+  balances     : array of {
+    leaveTypeCode : String;
+    accruedDays   : Integer;
+    usedDays      : Integer;
+    balance       : Integer;
+  };
+};
+
 }

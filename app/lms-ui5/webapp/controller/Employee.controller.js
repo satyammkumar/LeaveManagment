@@ -24,7 +24,7 @@ sap.ui.define([
         counts: { total: 0, pending: 0, approved: 0, rejected: 0 }
       }), "leaveRequests");
 
-      //  CHANGED: Track which request IDs we've already alerted on, so we
+      //  Track which request IDs we've already alerted on
       this._alreadyNotifiedIds = new Set();
 
       const oRouter = this.getOwnerComponent().getRouter();
@@ -293,9 +293,8 @@ sap.ui.define([
       }
     },
 
-    /**
-     * Only show notification for requests not yet notified.
-     */
+    //  Only show notification for requests not yet notified.
+    
   _checkForRejectionNotifications: function (requests, sTargetRequestId) {
   let newRejections;
 
@@ -344,9 +343,8 @@ sap.ui.define([
   );
 },
 
-    /**
-     * Also show approval notification, and pass changeType to
-     */
+    //  Also show approval notification, and pass changeType to
+     
    _onLeaveChanged: async function (sChannel, sEvent, oData) {
   try {
     const myEmpId = this.getOwnerComponent().getModel("user")?.getProperty("/employeeId");
@@ -372,7 +370,7 @@ sap.ui.define([
   }
 },
 
-    // ===== Full details dialog (row press) =====
+    // Full details dialog 
     onViewRequestDetails: function (oEvent) {
       const ctx = oEvent.getSource().getBindingContext("leaveRequests");
       const oData = ctx && ctx.getObject();
@@ -406,7 +404,7 @@ sap.ui.define([
       }
     },
 
-    // ===== Apply Leave dialog =====
+    // Apply Leave dialog
     onOpenApplyLeave: function () {
       const oApplyModel = this.getView().getModel("applyLeave");
       oApplyModel.setData(this._buildApplyLeaveModelData());
@@ -522,7 +520,7 @@ sap.ui.define([
       }
     },
 
-    // ============== helpers for dates ==============
+    // helpers for dates
 
     _buildApplyLeaveModelData: function () {
       return {
@@ -636,7 +634,7 @@ sap.ui.define([
       return requests; 
     },
 
-    /* ===================== Manager Message dialog ===================== */
+    /* Manager Message dialog  */
 
     __mmFallback: function (s) {
       if (s && String(s).trim()) return s;

@@ -12,10 +12,16 @@
     <content>
       <VBox class="sapUiMediumMargin">
 
-        <!-- Greeting & Main Actions -->
+        <!-- Greeting  -->
         <HBox width="100%" justifyContent="SpaceBetween" alignItems="Center">
           <Title text="Manager Dashboard" level="H2"/>
           <HBox width="100%" justifyContent="End" alignItems="Center">
+            <Button
+              text="Generate Employee Leaves"
+              icon="sap-icon://add-activity"
+              type="Emphasized"
+              press=".onOpenGenerateLeaves"
+              class="sapUiTinyMarginEnd"/>
             <Button text="Logout" icon="sap-icon://log" press=".onLogout" class="lightRedButton"/>
           </HBox>
         </HBox>
@@ -27,27 +33,20 @@
           <ObjectStatus id="kpiRejected" title="Rejected Today"  text="{view>/kpi/rejectedToday}" state="Error"/>
         </HBox>
 
-        <!-- Filter Bar -->
+       
         <Toolbar class="sapUiMediumMarginTop">
           <Select id="selStatus" width="10rem" change=".onStatusChange">
             <items>
+              <core:Item key="empty"    text="Select Type"/>
               <core:Item key="Pending"  text="Pending"/>
               <core:Item key="Approved" text="Approved"/>
               <core:Item key="Rejected" text="Rejected"/>
               <core:Item key="Cancelled" text="Cancelled"/>
-              <core:Item key="All"      text="All"/>
             </items>
           </Select>
 
-          <!-- <DateRangeSelection id="drSubmitted"
-                              displayFormat="medium"
-                              delimiter="→"
-                              change=".onDateRangeChange"
-                              width="16rem"
-                              class="sapUiTinyMarginBegin"/> -->
-
           <SearchField id="reqSearch"
-                       placeholder="Employee, Leavetype, or Reason"
+                       placeholder="Employee, Leavetype or Reason"
                        width="22rem"
                        liveChange=".onLiveSearch"
                        search=".onSearch"
@@ -62,8 +61,8 @@
         <Toolbar>
           <Title text="Requests from Your Team"/>
           <ToolbarSpacer/>
-          <Button id="btnApproveSel" text="Approve Selected" type="Accept" icon="sap-icon://accept" enabled="false" press=".onApproveSelected"/>
-          <Button id="btnRejectSel"  text="Reject Selected"  type="Reject" icon="sap-icon://decline" enabled="false" press=".onRejectSelected" class="sapUiTinyMarginBegin"/>
+          <!-- <Button id="btnApproveSel" text="Approve Selected" type="Accept" icon="sap-icon://accept" enabled="false" press=".onApproveSelected"/>
+          <Button id="btnRejectSel"  text="Reject Selected"  type="Reject" icon="sap-icon://decline" enabled="false" press=".onRejectSelected" class="sapUiTinyMarginBegin"/> -->
         </Toolbar>
 
         <!-- Worklist Table -->
@@ -101,25 +100,12 @@
           <items>
             <ColumnListItem type="Active" press=".onRowPress">
               <cells>
-                <!-- EMPLOYEE NAME - Direct binding to empname -->
-                <Text text="{empname}"/> 
-                
-                <!-- LEAVE TYPE DESCRIPTION -->
+                <Text text="{empname}"/>
                 <Text text="{ path: 'leaveType_code', formatter: '.formatLeaveTypeDesc' }"/>
-
-                <!-- DATE RANGE -->
                 <Text text="{ parts: [{path:'startDate'},{path:'endDate'}], formatter: '.formatDateRange' }"/>
-
-                <!-- DAYS REQUESTED -->
                 <Text text="{daysRequested}"/>
-
-                <!-- REASON -->
                 <Text text="{reason}" wrapping="true" maxLines="2"/>
-
-                <!-- STATUS -->
                 <ObjectStatus text="{status}" state="{ path: 'status', formatter: '.formatStatusState' }"/>
-
-                <!-- ROW ACTIONS -->
                 <HBox justifyContent="End" width="100%">
                   <Button text="Approve" type="Accept" icon="sap-icon://accept"
                           press=".onApproveOne"
@@ -145,18 +131,15 @@
         <!-- Details Popover -->
         <ResponsivePopover id="popDetails" placement="Auto" title="Leave Request Details">
           <VBox class="sapUiSmallMargin" width="400px">
-            <!-- Employee Name - Direct binding -->
             <ObjectAttribute title="Employee Name" text="{empname}"/>
             <ObjectAttribute title="Leave Type"
               text="{ path: 'leaveType_code', formatter: '.formatLeaveTypeFullDesc' }"/>
             <ObjectAttribute title="Period"
               text="{ parts: [{path:'startDate'},{path:'endDate'}], formatter: '.formatDateRange' }"/>
-            <ObjectAttribute title="Days"
-              text="{daysRequested}"/>
+            <ObjectAttribute title="Days" text="{daysRequested}"/>
             <ObjectAttribute title="Submitted"
               text="{ path: 'submittedAt', formatter: '.formatDateTime' }"/>
-            <ObjectAttribute title="Reason"
-              text="{reason}"/>
+            <ObjectAttribute title="Reason" text="{reason}"/>
             <ObjectStatus title="Status" text="{status}" state="{ path: 'status', formatter: '.formatStatusState' }"/>
             <HBox class="sapUiSmallMarginTop" justifyContent="End">
               <Button text="Approve" type="Accept" icon="sap-icon://accept" press=".onApproveFromPopover"
@@ -174,7 +157,6 @@
             <VBox class="sapUiSmallMargin" width="100%">
               <ObjectAttribute title="Employee Name" text="{view>/rejectData/employeeName}"/>
               <ObjectAttribute title="Leave Type" text="{view>/rejectData/leaveType}" class="sapUiSmallMarginTop"/>
-
               <Label text="Rejection Comments (Required)" class="sapUiSmallMarginTop sapUiMediumMarginBottom"/>
               <TextArea id="taRejectComments"
                         value="{ path: 'view>/rejectData/comments', type: 'sap.ui.model.type.String' }"
@@ -193,6 +175,88 @@
           </beginButton>
           <endButton>
             <Button text="Cancel" press=".onCancelReject"/>
+          </endButton>
+        </Dialog>
+
+        <!-- GENERATE EMPLOYEE LEAVES -->
+        <Dialog id="generateLeavesDialog"
+                title="Generate Employee Leaves"
+                contentWidth="480px"
+                contentHeight="auto"
+                draggable="true"
+                resizable="false">
+          <content>
+            <VBox class="sapUiSmallMargin sapUiSmallMarginTop">
+
+              <!-- Employee ID input -->
+              <Label text="Employee ID" required="true" class="sapUiTinyMarginBottom"/>
+              <Input id="genEmpIdInput"
+                     value="{view>/generateLeaves/employeeId}"
+                     placeholder=""
+                     width="100%"
+                     liveChange=".onGenEmpIdChange"/>
+
+              <!-- Validation message strip -->
+              <MessageStrip id="genEmpMsg"
+                            text="{view>/generateLeaves/empMessage}"
+                            type="{view>/generateLeaves/empMessageType}"
+                            showIcon="true"
+                            visible="{= !!${view>/generateLeaves/empMessage} }"
+                            class="sapUiTinyMarginTop sapUiTinyMarginBottom"/>
+
+              <!-- Divider -->
+              <core:HTML content="&lt;hr style='border:none;border-top:1px solid #e0e0e0;margin:8px 0'/&gt;"/>
+
+              <!-- Leave allocation rows -->
+              <Title text="Allocate Leave Days" level="H5" class="sapUiTinyMarginBottom"/>
+
+              <!-- Earned Leaves row -->
+              <HBox width="100%" alignItems="Center" class="sapUiTinyMarginTop">
+                <VBox width="60%">
+                  <Label text="Earned Leaves"/>
+                  <Text text="Annual / earned paid leave" class="sapUiTinyMarginTop" wrapping="false"
+                        />
+                </VBox>
+                <StepInput id="genEarnedInput"
+                           value="{view>/generateLeaves/earnedDays}"
+                           min="0" max="365" step="1"
+                           width="120px"
+                           change=".onGenDaysChange"
+                           class="sapUiTinyMarginBegin"/>
+              </HBox>
+
+              
+
+              <!-- Divider -->
+              <core:HTML content="&lt;hr style='border:none;border-top:1px solid #e0e0e0;margin:10px 0'/&gt;"/>
+
+              <!-- Total balance summary -->
+              <HBox width="100%" justifyContent="SpaceBetween" alignItems="Center">
+                <Label text="Total Leave Balance" design="Bold"/>
+                <ObjectStatus
+                  text="{= ${view>/generateLeaves/totalDays} + ' day(s)'}"
+                  state="{= ${view>/generateLeaves/totalDays} > 0 ? 'Success' : 'None' }"
+                  inverted="true"/>
+              </HBox>
+
+              <!-- Breakdown -->
+              <HBox width="100%" justifyContent="SpaceBetween" class="sapUiTinyMarginTop">
+                <Text text="{= 'Earned: ' + ${view>/generateLeaves/earnedDays} + ' day(s)'}"/>
+               
+              </HBox>
+
+            </VBox>
+          </content>
+
+          <beginButton>
+            <Button text="Assign Leaves"
+                    type="Emphasized"
+                    icon="sap-icon://accept"
+                    press=".onConfirmGenerateLeaves"
+                    enabled="{= !!${view>/generateLeaves/employeeId} &amp;&amp; ${view>/generateLeaves/totalDays} > 0 }"/>
+          </beginButton>
+          <endButton>
+            <Button text="Cancel" press=".onCancelGenerateLeaves"/>
           </endButton>
         </Dialog>
 
